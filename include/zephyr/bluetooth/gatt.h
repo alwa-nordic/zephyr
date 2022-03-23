@@ -750,7 +750,14 @@ struct _bt_gatt_ccc {
 	/** Configuration for each connection */
 	struct bt_gatt_ccc_cfg cfg[BT_GATT_CCC_MAX];
 
-	/** Highest value of all connected peer's subscriptions */
+	/** Bitwise-or of all currently connected peers' CCC values.
+	 *
+	 * Use this to determine the presence of interested subscribers, and
+	 * start/stop periodic calls to broadcast-mode @ref bt_gatt_indicate and
+	 * @ref bt_gatt_notify.
+	 *
+	 * This value is 0 both initially and when no clients are connected.
+	 */
 	uint16_t value;
 
 	/** @brief CCC attribute changed callback

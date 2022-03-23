@@ -63,6 +63,11 @@ Bluetooth
 
 * Host
 
+  * :c:member:`_bt_gatt_ccc.value` is now a bitwise-or of the individual
+    CCC values of the currently connected clients. This makes it useful
+    for determining if notification/indication broadcasts will have any
+    recipients.
+
 * Mesh
 
 * Controller

@@ -760,14 +760,29 @@ struct _bt_gatt_ccc {
 	 */
 	uint16_t value;
 
-	/** @brief CCC attribute changed callback
+	/** @brief React to changes to the @ref _bt_gatt_ccc.value field of this
+	 *  struct.
 	 *
-	 *  @param attr   The attribute that's changed value
-	 *  @param value  New value
+	 *  This event will fire whenever this @ref _bt_gatt_ccc.value changes
+	 *  value for any reason. This includes when the value changes because a
+	 *  bonded peer reconnects and the CCC value is restored from bond
+	 *  information.
+	 *
+	 *  @note Despite its name, this event will not trigger if only the @c
+	 *  cfg field changes while the @c value field remains the same.
+	 *  @note This event may come before the connection event when CCC
+	 *  values are restored from bond information.
+	 *
+	 *  @param attr   The CCC attribute
+	 *  @param value  New value of the @c value field
 	 */
 	void (*cfg_changed)(const struct bt_gatt_attr *attr, uint16_t value);
 
 	/** @brief CCC attribute write validation callback
+	 *
+	 * @note This is invoked when a client isseus an ATT write for the CCC
+	 * value. It is not invoked when the CCC value is restored from bond
+	 * information.
 	 *
 	 *  @param conn   The connection that is requesting to write
 	 *  @param attr   The attribute that's being written

@@ -890,29 +890,35 @@ static struct net_buf *l2cap_chan_le_get_tx_buf(struct bt_l2cap_le_chan *ch)
 static int l2cap_chan_le_send_sdu(struct bt_l2cap_le_chan *ch,
 				  struct net_buf **buf, uint16_t sent);
 
-static void l2cap_chan_tx_process(struct k_work *work)
+static int l2cap_chan_tx_next_fragment(struct bt_l2cap_chan *chan)
 {
-	struct bt_l2cap_le_chan *ch;
-	struct net_buf *buf;
+	struct bt_l2cap_le_chan *ch = BT_L2CAP_LE_CHAN(chan);
+	struct net_buf *sdu = l2cap_chan_le_get_tx_buf(ch);
+	int err;
 
-	ch = CONTAINER_OF(work, struct bt_l2cap_le_chan, tx_work);
+	if (!sdu) {
+		BT_DBG("TX idle chan %p", chan);
+		/* TX queue was empty. */
+		return 0;
+	}
 
-	/* Resume tx in case there are buffers in the queue */
-	while ((buf = l2cap_chan_le_get_tx_buf(ch))) {
-		int sent = l2cap_tx_meta_data(buf)->sent;
+	BT_DBG("TX attempt chan %p", chan);
+	err = l2cap_chan_le_send_sdu(ch, &buf, l2cap_tx_meta_data(buf)->sent);
 
-		BT_DBG("buf %p sent %u", buf, sent);
-
-		sent = l2cap_chan_le_send_sdu(ch, &buf, sent);
-		if (sent < 0) {
-			if (sent == -EAGAIN) {
-				ch->tx_buf = buf;
-			} else {
-				net_buf_unref(buf);
-			}
-			break;
+	if (err < 0) {
+		if (err == -EAGAIN) {
+			BT_DBG("TX wouldblock chan %p", chan);
+			/* Unget l2cap_chan_le_get_tx_buf. */
+			ch->tx_buf = buf;
+		} else {
+			/* Bad SDU? */
+			BT_DBG("TX oops chan %p, errno %d", chan, -err);
+			net_buf_unref(buf);
 		}
 	}
+
+	/* TX queue may have more items. */
+	return 1;
 }
 
 static void l2cap_chan_tx_init(struct bt_l2cap_le_chan *chan)
@@ -922,7 +928,6 @@ static void l2cap_chan_tx_init(struct bt_l2cap_le_chan *chan)
 	(void)memset(&chan->tx, 0, sizeof(chan->tx));
 	atomic_set(&chan->tx.credits, 0);
 	k_fifo_init(&chan->tx_queue);
-	k_work_init(&chan->tx_work, l2cap_chan_tx_process);
 }
 
 static void l2cap_chan_tx_give_credits(struct bt_l2cap_le_chan *chan,
@@ -1819,16 +1824,6 @@ segment:
 	return seg;
 }
 
-static void l2cap_chan_tx_resume(struct bt_l2cap_le_chan *ch)
-{
-	if (!atomic_get(&ch->tx.credits) ||
-	    (k_fifo_is_empty(&ch->tx_queue) && !ch->tx_buf)) {
-		return;
-	}
-
-	k_work_submit(&ch->tx_work);
-}
-
 static void l2cap_chan_sdu_sent(struct bt_conn *conn, void *user_data)
 {
 	struct l2cap_tx_meta_data *data = user_data;
@@ -1856,24 +1851,13 @@ static void l2cap_chan_sdu_sent(struct bt_conn *conn, void *user_data)
 	if (cb) {
 		cb(conn, cb_user_data);
 	}
-
-	l2cap_chan_tx_resume(BT_L2CAP_LE_CHAN(chan));
 }
 
 static void l2cap_chan_seg_sent(struct bt_conn *conn, void *user_data)
 {
 	struct l2cap_tx_meta_data *data = user_data;
-	struct bt_l2cap_chan *chan;
 
 	BT_DBG("conn %p CID 0x%04x", conn, data->cid);
-
-	chan = bt_l2cap_le_lookup_tx_cid(conn, data->cid);
-	if (!chan) {
-		/* Received segment sent callback for disconnected channel */
-		return;
-	}
-
-	l2cap_chan_tx_resume(BT_L2CAP_LE_CHAN(chan));
 }
 
 static bool test_and_dec(atomic_t *target)
@@ -2923,7 +2907,6 @@ int bt_l2cap_chan_send_cb(struct bt_l2cap_chan *chan, struct net_buf *buf, bt_co
 {
 	struct bt_l2cap_le_chan *le_chan = BT_L2CAP_LE_CHAN(chan);
 	struct l2cap_tx_meta_data *data;
-	int err;
 
 	if (!buf) {
 		return -EINVAL;
@@ -2956,28 +2939,13 @@ int bt_l2cap_chan_send_cb(struct bt_l2cap_chan *chan, struct net_buf *buf, bt_co
 	data->user_data = user_data;
 	l2cap_tx_meta_data(buf) = data;
 
-	/* Queue if there are pending segments left from previous packet or
-	 * there are no credits available.
-	 */
-	if (le_chan->tx_buf || !k_fifo_is_empty(&le_chan->tx_queue) ||
-	    !atomic_get(&le_chan->tx.credits)) {
-		l2cap_tx_meta_data(buf)->sent = 0;
-		net_buf_put(&le_chan->tx_queue, buf);
-		k_work_submit(&le_chan->tx_work);
-		return 0;
-	}
+	l2cap_tx_meta_data(buf)->sent = 0;
+	net_buf_put(&le_chan->tx_queue, buf);
 
-	err = l2cap_chan_le_send_sdu(le_chan, &buf, 0);
-	if (err < 0) {
-		if (err == -EAGAIN && l2cap_tx_meta_data(buf)->sent) {
-			/* Queue buffer if at least one segment could be sent */
-			net_buf_put(&le_chan->tx_queue, buf);
-			return l2cap_tx_meta_data(buf)->sent;
-		}
-		BT_ERR("failed to send message %d", err);
-	}
+	/* Notify the L2CAP scheduler. */
+	l2cap_sched_set_pending();
 
-	return err;
+	return 0;
 }
 
 int bt_l2cap_chan_send(struct bt_l2cap_chan *chan, struct net_buf *buf)

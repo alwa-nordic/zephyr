@@ -5182,6 +5182,10 @@ bool bt_uuid_create(struct bt_uuid *uuid, const uint8_t *data, uint8_t data_len)
  */
 void bt_uuid_to_str(const struct bt_uuid *uuid, char *str, size_t len);
 
+/** Includes room for the null terminator.
+ */
+#define BT_UUID_STR_SIZE 37
+
 #ifdef __cplusplus
 }
 #endif

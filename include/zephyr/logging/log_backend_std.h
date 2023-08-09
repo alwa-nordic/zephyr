@@ -23,7 +23,7 @@ extern "C" {
 
 static inline uint32_t log_backend_std_get_flags(void)
 {
-	uint32_t flags = (LOG_OUTPUT_FLAG_LEVEL | LOG_OUTPUT_FLAG_TIMESTAMP);
+	uint32_t flags = (LOG_OUTPUT_FLAG_LEVEL);
 
 	if (IS_ENABLED(CONFIG_LOG_BACKEND_SHOW_COLOR)) {
 		flags |= LOG_OUTPUT_FLAG_COLORS;

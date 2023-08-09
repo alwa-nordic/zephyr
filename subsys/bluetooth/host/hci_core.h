@@ -143,6 +143,8 @@ struct bt_le_ext_adv {
 	/* Current local Random Address */
 	bt_addr_le_t            random_addr;
 
+	bt_addr_le_t            override;
+
 	/* Current target address */
 	bt_addr_le_t            target_addr;
 

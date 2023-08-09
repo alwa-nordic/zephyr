@@ -165,12 +165,13 @@ int bt_id_set_adv_random_addr(struct bt_le_ext_adv *adv,
 		return set_random_address(addr);
 	}
 
-	LOG_DBG("%s", bt_addr_str(addr));
+	LOG_ERR("%s", bt_addr_str(addr));
 
 	if (!atomic_test_bit(adv->flags, BT_ADV_PARAMS_SET)) {
 		bt_addr_copy(&adv->random_addr.a, addr);
 		adv->random_addr.type = BT_ADDR_LE_RANDOM;
 		atomic_set_bit(adv->flags, BT_ADV_RANDOM_ADDR_PENDING);
+		LOG_ERR("manamana");
 		return 0;
 	}
 

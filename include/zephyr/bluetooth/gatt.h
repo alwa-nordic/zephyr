@@ -388,7 +388,7 @@ void bt_gatt_cb_register(struct bt_gatt_cb *cb);
  *
  *  When using @kconfig{CONFIG_BT_GATT_CACHING} and @kconfig{CONFIG_BT_SETTINGS}
  *  then all services that should be included in the GATT Database Hash
- *  calculation should be added before calling @ref settings_load.
+ *  calculation should be added before calling @ref bt_init.
  *  All services registered after settings_load will trigger a new database hash
  *  calculation and a new hash stored.
  *
@@ -1398,7 +1398,7 @@ typedef uint8_t (*bt_gatt_discover_func_t)(struct bt_conn *conn,
 					struct bt_gatt_discover_params *params);
 
 /** GATT Discover types */
-enum {
+enum bt_gatt_discover_type {
 	/** Discover Primary Services. */
 	BT_GATT_DISCOVER_PRIMARY,
 	/** Discover Secondary Services. */

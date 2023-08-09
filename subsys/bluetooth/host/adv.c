@@ -1608,6 +1608,14 @@ int bt_le_ext_adv_update_param(struct bt_le_ext_adv *adv,
 	return le_ext_adv_param_set(adv, param, false);
 }
 
+int bt_le_ext_adv_set_adva(struct bt_le_ext_adv *adv, const bt_addr_le_t *adva)
+{
+	LOG_ERR("hacker voice: im in");
+	int err = bt_id_set_adv_random_addr(adv, &adva->a);
+	__ASSERT_NO_MSG(!err);
+	return 0;
+}
+
 int bt_le_ext_adv_start(struct bt_le_ext_adv *adv,
 			struct bt_le_ext_adv_start_param *param)
 {
@@ -1624,6 +1632,11 @@ int bt_le_ext_adv_start(struct bt_le_ext_adv *adv,
 		if (err) {
 			return err;
 		}
+		IF_ENABLED(CONFIG_BT_TESTING, ({
+			if (param->conn) {
+				*param->conn = bt_conn_ref(conn);
+			}
+		}));
 	}
 
 	atomic_set_bit_to(adv->flags, BT_ADV_LIMITED, param &&

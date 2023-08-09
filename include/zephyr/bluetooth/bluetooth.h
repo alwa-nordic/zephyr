@@ -1133,6 +1133,17 @@ struct bt_le_ext_adv_start_param {
 	 * Set to zero for no limit.
 	 */
 	uint8_t  num_events;
+
+#if defined(CONFIG_BT_TESTING)
+	/**
+	 * If not NULL, the conn object allocated for the connectable
+	 * advertiser is refed and put here when @ref
+	 * bt_le_ext_adv_start is called. This is the same connection
+	 * object that will be passed to the various connected
+	 * callbacks.
+	 */
+	struct bt_conn **conn;
+#endif /* CONFIG_BT_TESTING */
 };
 
 /**
@@ -1150,6 +1161,18 @@ struct bt_le_ext_adv_start_param {
  */
 int bt_le_ext_adv_start(struct bt_le_ext_adv *adv,
 			struct bt_le_ext_adv_start_param *param);
+
+#if 1
+/**
+ * @brief Start advertising with the given advertising set
+ *
+ * Roughly corresponsd to HCI set adv address
+ *
+ * @param adv    Advertising set object.
+ * @param param  Advertise start parameters.
+ */
+int bt_le_ext_adv_set_adva(struct bt_le_ext_adv *adv, const bt_addr_le_t *adva);
+#endif
 
 /**
  * @brief Stop advertising with the given advertising set

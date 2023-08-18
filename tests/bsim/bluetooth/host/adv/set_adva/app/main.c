@@ -167,6 +167,69 @@ void adv_conn_wait_custom_adva(struct bt_conn **conn, const bt_addr_le_t *adva)
 }
 
 /* }}} */
+#if 0
+	BT_CONN_ROLE_CENTRAL = 0,
+	BT_CONN_ROLE_PERIPHERAL = 1,
+#endif
+
+char *bt_conn_state_str(enum bt_conn_state x)
+{
+	switch (x) {
+	case BT_CONN_STATE_DISCONNECTED:
+		return "disconnected";
+	case BT_CONN_STATE_CONNECTING:
+		return "connecting";
+	case BT_CONN_STATE_CONNECTED:
+		return "connected";
+	case BT_CONN_STATE_DISCONNECTING:
+		return "disconnecting";
+	default:
+		return "unknown";
+	}
+}
+
+char *bt_conn_role_str(int conn_role)
+{
+	switch (conn_role) {
+	case BT_CONN_ROLE_CENTRAL:
+		return "central";
+	case BT_CONN_ROLE_PERIPHERAL:
+		return "peripheral";
+	default:
+		return "unknown";
+	}
+}
+
+char *bt_addr_le_str(const bt_addr_le_t *addr);
+
+void print_conn_info(struct bt_conn *conn)
+{
+	struct bt_conn_info info;
+	EZ(bt_conn_get_info(conn, &info));
+
+	const bt_addr_le_t *init_addr;
+	const bt_addr_le_t *resp_addr;
+
+	if (info.role == BT_CONN_ROLE_CENTRAL) {
+		init_addr = info.le.local;
+		resp_addr = info.le.remote;
+	} else {
+		init_addr = info.le.remote;
+		resp_addr = info.le.local;
+	}
+
+	LOG_INF("conn index %d (%p)", bt_conn_index(conn), (void *)conn);
+	LOG_INF("    id %d", info.id);
+	LOG_INF("    %s", bt_conn_state_str(info.state));
+	LOG_INF("    %s", bt_conn_role_str(info.role));
+	//LOG_INF("    interval %d", info.le.interval);
+	//LOG_INF("    latency %d", info.le.latency);
+	//LOG_INF("    timeout %d", info.le.timeout);
+	LOG_INF("    cnlr %s", bt_addr_le_str(init_addr));
+	LOG_INF("    prph %s", bt_addr_le_str(resp_addr));
+	LOG_INF("    self %s", bt_addr_le_str(info.le.src));
+	LOG_INF("    othr %s", bt_addr_le_str(info.le.dst));
+}
 
 void play(bool central, bool peripheral)
 {
@@ -194,14 +257,26 @@ void play(bool central, bool peripheral)
 	}
 	if (central) {
 		EZ(bt_testlib_scan_find_name(&adva_special_found, "peripheral"));
-		EZ(bt_testlib_connect(&adva_special_found, &conn_special));
+		__ASSERT_NO_MSG(bt_addr_le_eq(&adva_special, &adva_special_found));
+		EZ(bt_testlib_connect(&adva_special, &conn_special));
+	}
+
+	bt_testlib_bs_sync();
+	if (peripheral) {
+		LOG_INF("Special connected");
+		print_conn_info(conn_special);
+	}
+	bt_testlib_bs_sync();
+
+	if (central) {
 		bt_set_bondable(false);
 		EZ(bt_testlib_secure(conn_special, BT_SECURITY_L2));
 	}
 
 	bt_testlib_bs_sync();
-	if (central) {
+	if (peripheral) {
 		LOG_INF("Special connection paired");
+		print_conn_info(conn_special);
 	}
 	bt_testlib_bs_sync();
 
@@ -214,14 +289,24 @@ void play(bool central, bool peripheral)
 	if (central) {
 		EZ(bt_testlib_scan_find_name(&adva_other, "peripheral"));
 		EZ(bt_testlib_connect(&adva_other, &conn_other));
+	}
 
+	bt_testlib_bs_sync();
+	if (peripheral) {
+		LOG_INF("Other connection connected");
+		print_conn_info(conn_special);
+	}
+	bt_testlib_bs_sync();
+
+	if (central) {
 		bt_set_bondable(true);
 		EZ(bt_testlib_secure(conn_other, BT_SECURITY_L2));
 	}
 
 	bt_testlib_bs_sync();
-	if (central) {
+	if (peripheral) {
 		LOG_INF("Other connection bonded");
+		print_conn_info(conn_special);
 	}
 	bt_testlib_bs_sync();
 

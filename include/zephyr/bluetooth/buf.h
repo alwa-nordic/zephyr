@@ -140,18 +140,36 @@ struct net_buf *bt_buf_get_tx(enum bt_buf_type type, k_timeout_t timeout,
  */
 struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout);
 
+#define BT_BUF_EVT_LOOKAHEAD_SIZE 3
+
 /** Allocate a buffer for an HCI Event
  *
  *  This will set the buffer type so bt_buf_set_type() does not need to
  *  be explicitly called before bt_recv_prio() or bt_recv().
  *
  *  @param evt          HCI event code
- *  @param discardable  Whether the driver considers the event discardable.
- *  @param timeout      Non-negative waiting period to obtain a buffer or one of
- *                      the special values K_NO_WAIT and K_FOREVER.
+ *  @param evt_payload  Partial payload of the event already received by
+ *                      the driver.
+ *  @param evt_payload_len Length of the partial payload. This value is
+ *  allowed to exceed the size of the packet. The exess data will be
+ *  ignored.
+ *  @param[out] evt_payload_required Lower bound on @p evt_payload_len
+ *  needed to have all the headers required for this allocator to return
+ *  a buffer. If more payload is needed, no allocation has happened and
+ *  the return value will be NULL. In that case the caller should obtain
+ *  more data and call this function again. This value may grow multiple
+ *  times. When this function returns a non-NULL value, the allocation
+ *  was successful and this value should be disregarded. This value will
+ *  never exceed the size of the packet.
+ *  @param discardable  Whether the driver considers the event
+ *  discardable.
+ *  @param timeout      Non-negative waiting period to obtain a buffer
+ *                      or one of the special values K_NO_WAIT and
+ *                      K_FOREVER.
  *  @return A new buffer.
  */
-struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable, k_timeout_t timeout);
+struct net_buf *bt_buf_get_evt(uint8_t evt, uint8_t *evt_payload, uint8_t evt_payload_len, uint8_t *evt_payload_need_more, bool discardable,
+			       k_timeout_t timeout);
 
 /** Set the buffer type
  *

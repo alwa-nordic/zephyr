@@ -86,10 +86,19 @@ struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
 	return buf;
 }
 
-struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout)
+struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout, uint16_t cmd_opcode)
 {
 	struct net_buf *buf;
 
+	switch (cmd_opcode) {
+		case BT_OP_NOP:
+		case BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS:
+			/* This is a "command complete" without a command. The
+cmd_complete allocator assumes there was a corresponding command, so we
+must use the default event allocator instead.
+	*/
+		break;
+		default:
 	buf = (struct net_buf *)atomic_ptr_clear((atomic_ptr_t *)&bt_dev.sent_cmd);
 	if (buf) {
 		bt_buf_set_type(buf, BT_BUF_EVT);
@@ -98,13 +107,16 @@ struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout)
 
 		return buf;
 	}
+	}
 
 	return bt_buf_get_rx(BT_BUF_EVT, timeout);
 }
 
-struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable,
+struct net_buf *bt_buf_get_evt(uint8_t evt, uint8_t *evt_payload, uint8_t evt_payload_len, uint8_t *evt_payload_need_more, bool discardable,
 			       k_timeout_t timeout)
 {
+	*evt_payload_need_more = 0;
+
 	switch (evt) {
 #if defined(CONFIG_BT_CONN) || defined(CONFIG_BT_ISO)
 	case BT_HCI_EVT_NUM_COMPLETED_PACKETS:
@@ -121,8 +133,29 @@ struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable,
 		}
 #endif /* CONFIG_BT_CONN || CONFIG_BT_ISO */
 	case BT_HCI_EVT_CMD_COMPLETE:
+		if (evt_payload_len < sizeof(struct bt_hci_evt_cmd_status)) {
+			*evt_payload_need_more = sizeof(struct bt_hci_evt_cmd_status) - evt_payload_len;
+		}
+
+		if (!*evt_payload_need_more) {
+			struct bt_hci_evt_cmd_status *evt = evt_payload;
+
+			return bt_buf_get_cmd_complete(timeout, sys_le16_to_cpu(evt_payload.opcode));
+		}
+
+		return NULL;
 	case BT_HCI_EVT_CMD_STATUS:
-		return bt_buf_get_cmd_complete(timeout);
+		if (evt_payload_len < sizeof(struct bt_hci_evt_cmd_complete)) {
+			*evt_payload_need_more = sizeof(struct bt_hci_evt_cmd_complete) - evt_payload_len;
+		}
+
+		if (!*evt_payload_need_more) {
+			struct bt_hci_evt_cmd_complete *evt = evt_payload;
+
+			return bt_buf_get_cmd_complete(timeout, sys_le16_to_cpu(evt_payload.opcode));
+		}
+
+		return NULL;
 	default:
 		if (discardable) {
 			struct net_buf *buf;

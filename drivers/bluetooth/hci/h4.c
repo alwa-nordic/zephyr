@@ -54,10 +54,13 @@ static struct {
 
 	uint8_t     type;
 	union {
-		struct bt_hci_evt_hdr evt;
+		__packed struct {
+			struct bt_hci_evt_hdr evt;
+			uint8_t evt_payload[BT_BUF_EVT_LOOKAHEAD_SIZE];
+		};
 		struct bt_hci_acl_hdr acl;
 		struct bt_hci_iso_hdr iso;
-		uint8_t hdr[4];
+		uint8_t hdr[4 + BT_BUF_EVT_LOOKAHEAD_SIZE];
 	};
 } rx = {
 	.fifo = Z_FIFO_INITIALIZER(rx.fifo),
@@ -71,7 +74,7 @@ static struct {
 	.fifo = Z_FIFO_INITIALIZER(tx.fifo),
 };
 
-static const struct device *const h4_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_uart));
+static const struct device *const h4_dev = DEVICE_DT_GET(DT_CHOSEN(zget_rxephyr_bt_uart));
 
 static inline void h4_get_type(void)
 {
@@ -198,7 +201,7 @@ static struct net_buf *get_rx(k_timeout_t timeout)
 
 	switch (rx.type) {
 	case H4_EVT:
-		return bt_buf_get_evt(rx.evt.evt, rx.discardable, timeout);
+		return bt_buf_get_evt(rx.evt.evt, rx.evt_payload, rx.hdr_len - offsetof(rx.evt_payload), &rx.remaining, rx.discardable, timeout);
 	case H4_ACL:
 		return bt_buf_get_rx(BT_BUF_ACL_IN, timeout);
 	case H4_ISO:
@@ -275,17 +278,18 @@ static size_t h4_discard(const struct device *uart, size_t len)
 	return err;
 }
 
-static inline void read_payload(void)
+static inline void allocate_rx_buf(void)
 {
-	struct net_buf *buf;
-	uint8_t evt_flags;
-	int read;
-
 	if (!rx.buf) {
 		size_t buf_tailroom;
 
 		rx.buf = get_rx(K_NO_WAIT);
 		if (!rx.buf) {
+			if (rx.remaining) {
+				rx.have_hdr = false;
+				return;
+			}
+
 			if (rx.discardable) {
 				LOG_WRN("Discarding event 0x%02x", rx.evt.evt);
 				rx.discard = rx.remaining;
@@ -310,6 +314,13 @@ static inline void read_payload(void)
 
 		copy_hdr(rx.buf);
 	}
+}
+
+static inline void read_payload(void)
+{
+	struct net_buf *buf;
+	uint8_t evt_flags;
+	int read;
 
 	read = uart_fifo_read(h4_dev, net_buf_tail(rx.buf), rx.remaining);
 	if (unlikely(read < 0)) {
@@ -456,8 +467,10 @@ static inline void process_rx(void)
 		return;
 	}
 
-	if (rx.have_hdr) {
+	if (rx.buf) {
 		read_payload();
+	else if (rx.have_hdr) {
+		allocate_rx_buf();
 	} else {
 		read_header();
 	}

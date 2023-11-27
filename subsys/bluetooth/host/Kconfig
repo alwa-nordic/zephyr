@@ -704,6 +704,22 @@ rsource "Kconfig.l2cap"
 rsource "Kconfig.gatt"
 rsource "../services/Kconfig"
 
+config BT_HOOK_CONN_LTK_REQUEST
+	bool "LTK request hook"
+	select EXPERIMENTAL
+	depends on BT_SMP
+	help
+	  When enabled, the stack expects the application to define a
+	  linkable symbol named bt_hook_conn_ltk_request. This hook is
+	  invoked when the stack receives HCI_LE_Long_Term_Key_Request
+	  from the controller. The hook can examine the request and
+	  choose to cancel the default handler. This enables the
+	  application to give a custom response with an LTK of its
+	  choosing.
+
+	  This option depends on BT_SMP due to implementation details.
+	  This dependency may be removed in the future.
+
 config BT_MAX_PAIRED
 	int "Maximum number of paired devices"
 	default 0 if !BT_SMP

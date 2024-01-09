@@ -2683,6 +2683,11 @@ static struct bt_smp *smp_chan_get(struct bt_conn *conn)
 {
 	struct bt_l2cap_chan *chan;
 
+	if (atomic_test_bit(conn->flags, BT_CONN_BYPASS_SMP)) {
+		LOG_DBG("SMP has been disabled by used on conn %p", conn);
+		return NULL;
+	}
+
 	chan = bt_l2cap_le_lookup_rx_cid(conn, BT_L2CAP_CID_SMP);
 	if (!chan) {
 		LOG_ERR("Unable to find SMP channel");

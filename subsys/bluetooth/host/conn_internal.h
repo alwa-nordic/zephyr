@@ -50,6 +50,8 @@ enum {
 	BT_CONN_CTE_REQ_ENABLED,              /* CTE request procedure is enabled */
 	BT_CONN_CTE_RSP_ENABLED,              /* CTE response procedure is enabled */
 
+	BT_CONN_BYPASS_SMP,
+
 	/* Total number of flags - must be at the end of the enum */
 	BT_CONN_NUM_FLAGS,
 };
@@ -436,3 +438,5 @@ struct k_sem *bt_conn_get_pkts(struct bt_conn *conn);
 /* k_poll related helpers for the TX thread */
 int bt_conn_prepare_events(struct k_poll_event events[]);
 void bt_conn_process_tx(struct bt_conn *conn);
+
+struct bt_keys *bt_conn_get_keys(struct bt_conn *conn);

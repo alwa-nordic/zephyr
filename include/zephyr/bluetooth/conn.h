@@ -1782,21 +1782,6 @@ struct bt_conn *bt_conn_create_sco(const bt_addr_t *peer);
  */
 struct bt_conn *bt_conn_lookup_handle(uint16_t handle, enum bt_conn_type type);
 
-bool bt_hook_conn_ltk_request(const uint8_t *evt);
-/*< @brief Application provided hook for LTK request events
- *
- * This hook is called when the host receives a
- * HCI_LE_Long_Term_Key_Request event.
- *
- * This symbol is expected to be defined by the application if
- * kconfig{BT_HOOK_CONN_LTK_REQUEST} `=y`.
- *
- * @param evt Raw event data. Can be parsed as @ref bt_hci_evt_le_ltk_request.
- *
- * @retval false The hook defers to the default handler.
- * @retval true The hook takes responsibility for handling this event.
- */
-
 #ifdef __cplusplus
 }
 #endif

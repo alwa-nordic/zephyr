@@ -147,6 +147,29 @@ int bt_hci_register_vnd_evt_cb(bt_hci_vnd_evt_cb_t cb);
  */
 int bt_hci_le_rand(void *buffer, size_t len);
 
+/** @brief Application provided hook for LTK request events
+ *
+ * This hook is called when the host receives a
+ * HCI_LE_Long_Term_Key_Request event.
+ *
+ * This symbol is expected to be defined by the application if
+ * kconfig{BT_HOOK_CONN_LTK_REQUEST} `=y`.
+ *
+ * @warning This API is experimental. Adult supervision required.
+ * Connections are fairly isolation, we hope. So using this hook for one
+ * connection should not affect other connections.
+ *
+ * @warning Only ever return the same value for a given connection.
+ *
+ * Also for the affected connections, be careful not to
+ * trigger any SMP stuff. Because we don't know what will happen.
+ *
+ * @param evt Raw event data. Can be parsed as @ref bt_hci_evt_le_ltk_request.
+ *
+ * @retval false The hook defers to the default handler, i.e. SMP.
+ * @retval true The hook takes responsibility for handling this event.
+ */
+bool bt_hook_conn_ltk_request(const uint8_t *evt);
 
 #ifdef __cplusplus
 }

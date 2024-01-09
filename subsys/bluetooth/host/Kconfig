@@ -708,6 +708,7 @@ config BT_HOOK_CONN_LTK_REQUEST
 	bool "LTK request hook"
 	select EXPERIMENTAL
 	depends on BT_SMP
+	depends on !BT_SIGNING
 	help
 	  When enabled, the stack expects the application to define a
 	  linkable symbol named bt_hook_conn_ltk_request. This hook is

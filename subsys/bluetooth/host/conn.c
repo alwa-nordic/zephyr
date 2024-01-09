@@ -3524,4 +3524,22 @@ void bt_hci_le_df_cte_req_failed(struct net_buf *buf)
 }
 #endif /* CONFIG_BT_DF_CONNECTION_CTE_REQ */
 
+struct bt_keys *bt_conn_get_keys(struct bt_conn *conn)
+{
+	if (atomic_test_bit(conn->flags, BT_CONN_BYPASS_SMP)) {
+		LOG_DBG("user disabled conn %p", conn);
+		return NULL;
+	}
+
+	if (!conn->le.keys) {
+		conn->le.keys = bt_keys_find(BT_KEYS_LTK_P256, conn->id, &conn->le.dst);
+	}
+
+	if (!conn->le.keys) {
+		conn->le.keys = bt_keys_find(BT_KEYS_LTK, conn->id, &conn->le.dst);
+	}
+
+	return conn->le.keys;
+}
+
 #endif /* CONFIG_BT_CONN */

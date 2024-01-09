@@ -45,7 +45,7 @@ LOG_MODULE_REGISTER(main, LOG_LEVEL_DBG);
 
 static ssize_t read_mtu_validation_chrc(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 					void *buf, uint16_t buf_len, uint16_t offset)
-{
+
 	return 0;
 }
 
@@ -55,6 +55,16 @@ static struct bt_gatt_attr attrs[] = {
 			       read_mtu_validation_chrc, NULL, NULL),
 	BT_GATT_CHARACTERISTIC(UUID_3, BT_GATT_CHRC_READ, BT_GATT_PERM_READ_AUTHEN,
 			       read_mtu_validation_chrc, NULL, NULL),
+	BT_GATT_CHARACTERISTIC(UUID_4, BT_GATT_CHRC_READ, BT_GATT_PERM_READ_LESC,
+			       read_mtu_validation_chrc, NULL, NULL),
+#if 0
+	BT_GATT_CHARACTERISTIC(UUID_2, BT_GATT_CHRC_READ, BT_GATT_PERM_WRITE_ENCRYPT,
+			       read_mtu_validation_chrc, NULL, NULL),
+	BT_GATT_CHARACTERISTIC(UUID_3, BT_GATT_CHRC_READ, BT_GATT_PERM_WRITE_AUTHEN,
+			       read_mtu_validation_chrc, NULL, NULL),
+	BT_GATT_CHARACTERISTIC(UUID_4, BT_GATT_CHRC_READ, BT_GATT_PERM_WRITE_LESC,
+			       read_mtu_validation_chrc, NULL, NULL),
+#endif
 };
 
 static struct bt_gatt_service sample_svc_requiring_encryption = {
@@ -274,6 +284,8 @@ void the_test(void)
 								   chrc_aut_perm_handle,
 								   0) == BT_ATT_ERR_AUTHENTICATION);
 	}
+
+	/* Test l2cap sec */
 
 	bs_sync_all_log("Test complete");
 	PASS("Test complete\n");

@@ -1,15 +1,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-
-enum hci_drv_result {
-	HCI_DRV_RESULT_NOTHING,
-	HCI_DRV_RESULT_TX_SUCCESS,
-	HCI_DRV_RESULT_TX_FAILURE,
-	HCI_DRV_RESULT_RX_SUCCESS,
-	HCI_DRV_RESULT_RX_FAILURE,
-};
-
 /**
  * @brief
  * @param drv_state
@@ -43,6 +34,9 @@ void hci_drv_wakeup(bool rx, bool tx);
  * Async step. May perform some fast, non-blocking internal
  * operations, and then dequeues an event. Returns `Nothing` if
  * there is no event available yet.
+ *
+ * @retval -EIO
+ * @retval -EAGAIN
  */
 int hci_drv_process_rx(void);
 int hci_drv_process_tx(void);

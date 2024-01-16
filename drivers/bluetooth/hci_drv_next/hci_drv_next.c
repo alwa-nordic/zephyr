@@ -254,8 +254,9 @@ static int sig_take(struct k_poll_signal *signal, k_timeout_t timeout)
 
 
 
-struct k_poll_signal *hci_drv_signal_rx;
-struct k_poll_signal *hci_drv_signal_tx;
+struct k_poll_signal hci_drv_signal_rx;
+struct k_poll_signal hci_drv_signal_tx;
+
 /* ISR */
 void hci_drv_wakeup(bool rx, bool tx)
 {
@@ -270,53 +271,69 @@ void hci_drv_wakeup(bool rx, bool tx)
 
 static int blocking_write(uint8_t *src, size_t len)
 {
-	int err = -EAGAIN;
+	int err;
 
+	/* Start the asynchrounous write. */
 	err = hci_drv_write_from(src, len);
 	if (err) {
-		return -EIO;
+		__ASSERT_NO_MSG(err == -EIO);
+		return err;
 	}
 
-	/* Old-style drivers have blocking TX. */
-	while (err == -EAGAIN) {
+	/* Poll until finished here. */
+	do {
 		err = sig_take(hci_drv_signal_tx, K_FOREVER);
 		__ASSERT_NO_MSG(err == 0);
 		err = rx_poll();
-	}
+	} while (err == -EAGAIN);
 
 	return err;
+}
+
+static void encapsulate_h4(struct net_buf *buf)
+{
+	uint8_t h4_type;
+
+	switch (bt_buf_get_type(buf)) {
+	case BT_BUF_H4:
+		/* Already decorated. */
+		return;
+	case BT_BUF_CMD:
+		h4_type = H4_CMD;
+		break;
+	case BT_BUF_EVT:
+		h4_type = H4_EVT;
+		break;
+	case BT_BUF_ACL_OUT:
+	case BT_BUF_ACL_IN:
+		h4_type = H4_ACL;
+		break;
+	case BT_BUF_ISO_OUT:
+	case BT_BUF_ISO_IN:
+		h4_type = H4_ISO;
+		break;
+	default:
+		__ASSERT_NO_MSG(false);
+		return;
+	}
+
+	__ASSERT_NO_MSG(net_buf_headroom(buf) >= H4_HDR_SIZE);
+	net_buf_push_u8(buf, h4_type);
+	bt_buf_set_type(buf, BT_BUF_H4);
 }
 
 static int hci_drv_next_send(struct net_buf *buf)
 {
 	int err;
-	int result = HCI_DRV_RESULT_NOTHING;
 
-	err = hci_drv_write_from(buf->data, buf->len);
-	if (err) {
-		return -EIO;
-	}
+	encapsulate_h4(buf);
 
-	/* Old-style drivers have blocking TX. */
-	while (result == HCI_DRV_RESULT_NOTHING) {
-		err = sig_take(hci_drv_signal_tx, K_FOREVER);
-		__ASSERT_NO_MSG(!err);
-		result = hci_drv_process_tx();
-	}
+	err = blocking_write(buf->data, buf->len);
 
 	net_buf_unref(buf);
 
-	if (result != HCI_DRV_RESULT_TX_SUCCESS) {
-		return -EIO;
-	}
-
-	return 0;
+	return err;
 }
-
-
-static bool busy;
-static uint8_t peek_buf[4];
-static size_t peek_len;
 
 static int rx_peek_add(size_t len)
 {
@@ -373,14 +390,57 @@ static int blocking_read(uint8_t *dst, size_t len)
 	return err;
 }
 
+static struct net_buf *read_hci_packet(void)
+{
+	int ret;
+	struct net_buf *buf = NULL;
+
+	do {
+		ret = rx_alloc_h4(active_buf, read_len, &buf);
+	} while (ret > 0);
+
+	if (err < 0) {
+		return NULL;
+	} else if (err == 0) {
+		return buf;
+	} else {
+		err = rx_peek_add(err);
+		if (err) {
+			return NULL;
+		}
+	}
+
+	return NULL;
+}
 
 static void rx_thread_entry(void *p1, void *p2, void *p3)
 {
+	int err;
+
 	ARG_UNUSED(p1);
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
 	while (1) {
+		size_t have_len = 0;
+		uint8_t *active_buf = NULL;
+		struct net_buf *buf = NULL;
+
+		bool busy;
+		uint8_t peek_buf[4];
+
+		if (buf) {
+			active_buf = buf->data;
+		} else {
+		}
+
+		rx_alloc_h4(active_buf, have_len, &buf);
+		err = blocking_read(active_buf, read_len);
+		if (err) {
+			__ASSERT_NO_MSG(err == -EIO);
+			/* Desync */
+			__ASSERT_NO_MSG(false);
+		}
 	}
 }
 

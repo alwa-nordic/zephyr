@@ -62,16 +62,184 @@ static int rx_poll(void)
 	return 0;
 }
 
-static int rx_poll_hci_acl(void)
+#define BT_HCI_EVT_CMD_COMPLETE_SIZE sizeof(struct bt_hci_evt_cmd_complete)
+static int rx_alloc_h4_evt_cmd_complete(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
 {
-	size_t acl_payload_length;
+	uint16_t opcode;
+	size_t peek_need = 0;
 
-	if (peek_len == 1) {
-		rx_peek_add(4);
+	if (peek_len < BT_HCI_EVT_CMD_COMPLETE_SIZE) {
+		return BT_HCI_EVT_CMD_COMPLETE_SIZE - peek_len;
 	}
-	__ASSERT_NO_MSG(peek_len == 5);
 
-	acl_payload_len = sys_get_le16(&peek_buf[3]);
+	opcode = sys_get_le16(&peek_buf[1]);
+
+	if (opcode == 0) {
+		*buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+	} else {
+		*buf = bt_buf_get_cmd_complete(opcode, K_FOREVER);
+	}
+
+	if (!*buf) {
+		LOG_ERR("Failed to allocate buffer");
+		return -ENOBUFS;
+	}
+
+	return 0;
+}
+
+#define BT_HCI_EVT_CMD_STATUS_SIZE sizeof(struct bt_hci_evt_cmd_status)
+static int rx_alloc_h4_evt_cmd_status(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
+{
+	uint16_t opcode;
+	size_t peek_need = 0;
+
+	if (peek_len < BT_HCI_EVT_CMD_STATUS_SIZE) {
+		return BT_HCI_EVT_CMD_STATUS_SIZE - peek_len;
+	}
+
+	opcode = sys_get_le16(&peek_buf[2]);
+
+	/* A non-zero opcode responds to a command. Events that respond to a
+	 * command must use the special allocator.
+	 */
+	if (opcode != 0) {
+		/* Special allocator for command responses. */
+		*buf = bt_buf_get_cmd_complete(opcode, K_FOREVER);
+	} else {
+		/* Otherwise, treat it like a normal event. It conveys only
+		 * flow-control information.
+		 */
+		*buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+	}
+
+	if (!*buf) {
+		LOG_ERR("Failed to allocate buffer");
+		return -ENOBUFS;
+	}
+
+	return 0;
+}
+
+#define BT_HCI_EVT_LE_META_SIZE sizeof(struct bt_hci_evt_le_meta_event)
+static int rx_alloc_h4_evt_le_meta(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
+{
+	uint8_t subevent_code;
+
+	if (peek_len < BT_HCI_EVT_LE_META_SIZE) {
+		return BT_HCI_EVT_LE_META_SIZE - peek_len;
+	}
+
+	subevent_code = peek_buf[0];
+
+	switch (subevent_code) {
+	case BT_HCI_EVT_LE_ADVERTISING_REPORT:
+		/* Discardable TODO */
+		*buf = bt_buf_get_evt(BT_HCI_EVT_LE_META_EVENT, true, K_NO_WAIT);
+		break;
+	default:
+		/* Events do not have flow control. Wait forever. */
+		*buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+	}
+
+	return peek_need - peek_len;
+}
+
+static int rx_alloc_h4_evt(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
+{
+	uint8_t evt_code;
+	size_t evt_len;
+
+	if (peek_len < BT_HCI_EVT_HDR_SIZE) {
+		return BT_HCI_EVT_HDR_SIZE - peek_len;
+	}
+
+	evt_code = peek_buf[0];
+	evt_len = peek_buf[1];
+
+	peek_buf = &peek_buf[BT_HCI_EVT_HDR_SIZE];
+	peek_len -= BT_HCI_EVT_HDR_SIZE;
+
+	switch (evt_code) {
+	case BT_HCI_EVT_CMD_COMPLETE:
+		return rx_alloc_h4_evt_cmd_complete(peek_buf, peek_len, buf);
+	case BT_HCI_EVT_CMD_STATUS:
+		return rx_alloc_h4_evt_cmd_status(peek_buf, peek_len, buf);
+	case BT_HCI_EVT_LE_META_EVENT:
+		return rx_alloc_h4_evt_le_meta(peek_buf, peek_len, buf);
+	default:
+		/* Events do not have flow control. Wait forever. */
+		*buf = bt_buf_get_evt(evt_code, false, K_FOREVER);
+		if (!*buf) {
+			LOG_ERR("Failed to allocate buffer");
+			return -ENOBUFS;
+		}
+	}
+
+	return evt_len - peek_len;
+}
+
+static int rx_alloc_h4_acl(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
+{
+	uint16_t acl_payload_length;
+
+	if (peek_len < BT_HCI_ACL_HDR_SIZE) {
+		return BT_HCI_ACL_HDR_SIZE - peek_len;
+	}
+
+	acl_payload_length = sys_get_le16(&peek_buf[2]);
+
+	peek_buf = &peek_buf[BT_HCI_ACL_HDR_SIZE];
+	peek_len -= BT_HCI_ACL_HDR_SIZE;
+
+	if (!buf) {
+		/* ACL buffers are ensured by host flow control. Don't wait. */
+		*buf = bt_buf_get_rx(BT_BUF_ACL_IN, K_NO_WAIT);
+		if (!buf) {
+			LOG_ERR("Failed to allocate ACL buffer");
+			return -ENOBUF;
+		}
+	}
+
+	return acl_payload_length - peek_len;
+}
+
+/**
+ * @brief Allocate a net_buf for the HCI packet in a H4 stream.
+ *
+ * @param peek_buf Lookahead buffer into the H4 stream
+ * @param peek_len Lookahead content length
+ * @param[out] buf Allocated net_buf. Once the net_buf is allocated, it can be
+ * used as the new buffer.
+ *
+ * @retval 0 HCI packet completed.
+ * @retval +n Lookahead buffer is missing at least `n` bytes.
+ * @retval -EIO Lookahead buffer contains invalid HCI packet.
+ * @retval -EIO Lookahead buffer contains invalid HCI packet.
+ */
+static int rx_alloc_h4(uint8_t peek_buf, uint8_t peek_len, struct net_buf **buf)
+{
+	uint8_t hci_type;
+	size_t next_hdr_len;
+
+	if (peek_len < H4_HDR_SIZE) {
+		return H4_HDR_SIZE - peek_len;
+	}
+
+	hci_type = peek_buf[0];
+
+	peek_buf = &peek_buf[H4_HDR_SIZE];
+	peek_len -= H4_HDR_SIZE;
+
+	switch (hci_type) {
+	case H4_EVT:
+		return rx_alloc_h4_evt(peek_buf, peek_len, buf);
+	case H4_ACL:
+		return rx_alloc_h4_acl(peek_buf, peek_len, buf);
+	default:
+		LOG_ERR("Unexpected hci type: %u", hci_type);
+		return -EIO;
+	}
 }
 
 static int rx_poll_base(void)
@@ -84,21 +252,8 @@ static int rx_poll_base(void)
 	}
 	__ASSERT_NO_MSG(err == 0 || err = -EAGAIN);
 
-	if (!busy) {
-		/* HCI type */
-		if (peek_len == 0) {
-			return rx_peek_add(1);
-		}
-
-		switch (peek_buf[0]) {
-		case H4_EVT:
-			return rx_poll_evt();
-		case H4_ACL:
-			return rx_poll_acl();
-		default:
-			LOG_ERR("Unexpected hci type: %u", hci_type);
-			return -EIO;
-		}
+	if (busy) {
+		return 0;
 	}
 
 	return 0;
@@ -125,27 +280,9 @@ static int rx_poll_hci_type(void)
 	return 0;
 }
 
-static size_t peek_size_min(void)
-{
-	if (peek_len == 0) {
-		return 1;
-	}
-
-	switch (peek_buf[0]) {
-	case H4_EVT:
-		return 5;
-	case H4_ACL:
-		return 5;
-	default:
-		LOG_ERR("Unexpected hci type: %u", hci_type);
-		return 0;
-	}
-}
-
 
 struct k_poll_signal *hci_drv_signal_rx;
 struct k_poll_signal *hci_drv_signal_tx;
-
 /* ISR */
 void hci_drv_wakeup(bool rx, bool tx)
 {
@@ -187,8 +324,6 @@ static int hci_drv_next_send(struct net_buf *buf)
 
 	return 0;
 }
-
-
 
 static int is_unsolicited_cmd_complete(uint8_t *data, size_t len)
 {
@@ -324,8 +459,8 @@ static void rx_thread_entry(void *p1, void *p2, void *p3)
 
 	/* Use this function on unsolicited cmd complete. */
 	bt_buf_get_rx(BT_BUF_EVT, timeout)
-	/* Use this function for any other evt. */
-	bt_buf_get_evt(rx.evt.evt, rx.discardable, timeout);
+		/* Use this function for any other evt. */
+		bt_buf_get_evt(rx.evt.evt, rx.discardable, timeout);
 	/* Use this function for ACL and ISO. */
 	buf = bt_buf_get_rx(BT_BUF_ISO_IN, timeout);
 }
@@ -335,8 +470,8 @@ static struct k_thread rx_thread_data;
 static rx_thread_start(void)
 {
 	(void)k_thread_create(&rx_thread_data, rx_thread_stack,
-			      K_KERNEL_STACK_SIZEOF(rx_thread_stack), rx_thread_entry, NULL, NULL, NULL,
-			      K_PRIO_COOP(CONFIG_BT_RX_PRIO), 0, K_NO_WAIT);
+			      K_KERNEL_STACK_SIZEOF(rx_thread_stack), rx_thread_entry, NULL, NULL,
+			      NULL, K_PRIO_COOP(CONFIG_BT_RX_PRIO), 0, K_NO_WAIT);
 }
 
 static int hci_drv_next_open(void)

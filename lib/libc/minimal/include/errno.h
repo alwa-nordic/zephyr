@@ -67,7 +67,7 @@ extern "C" {
 #define ENOSPC 28       /**< No space left on device */
 #define ESPIPE 29       /**< Illegal seek */
 #define EROFS 30        /**< Read-only file system */
-#define EMLINK 31       /**< Too many links */
+#define EMLNK 31       /**< Too many links */
 #define EPIPE 32        /**< Broken pipe */
 #define EDOM 33         /**< Argument too large */
 #define ERANGE 34       /**< Result too large */

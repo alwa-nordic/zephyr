@@ -6,7 +6,7 @@
 
 #include <stddef.h>
 
-static void h4_encapsulate(struct net_buf *buf)
+static int h4_encapsulate(struct net_buf *buf)
 {
 	uint8_t h4_type;
 
@@ -29,11 +29,13 @@ static void h4_encapsulate(struct net_buf *buf)
 		h4_type = H4_ISO;
 		break;
 	default:
-		__ASSERT_NO_MSG(false);
-		return;
+		return -EINVAL;
 	}
 
-	__ASSERT_NO_MSG(net_buf_headroom(buf) >= H4_HDR_SIZE);
+	if (net_buf_headroom(buf) < H4_HDR_SIZE) {
+		return -ENOSPC;
+	}
+
 	net_buf_push_u8(buf, h4_type);
 	bt_buf_set_type(buf, BT_BUF_H4);
 }

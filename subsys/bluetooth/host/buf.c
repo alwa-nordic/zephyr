@@ -102,45 +102,52 @@ struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout)
 	return bt_buf_get_rx(BT_BUF_EVT, timeout);
 }
 
+struct net_buf *bt_buf_get_evt_discardable(k_timeout_t timeout)
+{
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&discardable_pool, timeout);
+	if (buf) {
+		net_buf_reserve(buf, BT_BUF_RESERVE);
+		bt_buf_set_type(buf, BT_BUF_EVT);
+	}
+
+	return buf;
+}
+
+struct net_buf *bt_buf_get_evt_num_completed(k_timeout_t timeout)
+{
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&num_complete_pool, timeout);
+	if (buf) {
+		net_buf_reserve(buf, BT_BUF_RESERVE);
+		bt_buf_set_type(buf, BT_BUF_EVT);
+	}
+
+	return buf;
+}
+
 struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable,
 			       k_timeout_t timeout)
 {
 	switch (evt) {
 #if defined(CONFIG_BT_CONN) || defined(CONFIG_BT_ISO)
 	case BT_HCI_EVT_NUM_COMPLETED_PACKETS:
-		{
-			struct net_buf *buf;
-
-			buf = net_buf_alloc(&num_complete_pool, timeout);
-			if (buf) {
-				net_buf_reserve(buf, BT_BUF_RESERVE);
-				bt_buf_set_type(buf, BT_BUF_EVT);
-			}
-
-			return buf;
-		}
+		return bt_buf_get_evt_num_completed(timeout);
 #endif /* CONFIG_BT_CONN || CONFIG_BT_ISO */
 	case BT_HCI_EVT_CMD_COMPLETE:
 	case BT_HCI_EVT_CMD_STATUS:
 		return bt_buf_get_cmd_complete(timeout);
 	default:
 		if (discardable) {
-			struct net_buf *buf;
-
-			buf = net_buf_alloc(&discardable_pool, timeout);
-			if (buf) {
-				net_buf_reserve(buf, BT_BUF_RESERVE);
-				bt_buf_set_type(buf, BT_BUF_EVT);
-			}
-
-			return buf;
+			return bt_buf_get_evt_discardable(timeout);
 		}
 
 		return bt_buf_get_rx(BT_BUF_EVT, timeout);
 	}
 }
 
-#ifdef ZTEST_UNITTEST
 #if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
 struct net_buf_pool *bt_buf_get_evt_pool(void)
 {
@@ -171,4 +178,5 @@ struct net_buf_pool *bt_buf_get_num_complete_pool(void)
 	return &num_complete_pool;
 }
 #endif /* CONFIG_BT_CONN || CONFIG_BT_ISO */
-#endif /* ZTEST_UNITTEST */
+
+typedef struct net_buf *bt_alloc_func(k_timeout_t timeout);

@@ -168,6 +168,10 @@ static int rx_alloc_h4_acl(uint8_t peek_buf, uint8_t peek_len, struct net_buf *b
 	return acl_payload_length - peek_len;
 }
 
+typedef static int rx_parser_t(uint8_t *peek_buf, uint8_t peek_len, rx_alloc_t *out_alloc, rx_parser_t *current_parser);
+
+#define H4_HDR_SIZE_MIN (H4_HDR_SIZE + BT_HCI_EVT_HDR_SIZE)
+
 /**
  * @brief Allocate a net_buf for the HCI packet in a H4 stream.
  *
@@ -180,7 +184,7 @@ static int rx_alloc_h4_acl(uint8_t peek_buf, uint8_t peek_len, struct net_buf *b
  * @retval +n Lookahead buffer is missing at least `n` bytes.
  * @retval -EIO Lookahead buffer contains invalid HCI packet.
  */
-static int rx_alloc_h4(uint8_t *peek_buf, uint8_t peek_len, rx_alloc_t *out_alloc)
+static int rx_alloc_h4(uint8_t *peek_buf, uint8_t peek_len, rx_alloc_t *out_alloc, rx_parser_t *current_parser)
 {
 	uint8_t hci_type;
 	size_t next_hdr_len;
@@ -191,18 +195,20 @@ static int rx_alloc_h4(uint8_t *peek_buf, uint8_t peek_len, rx_alloc_t *out_allo
 
 	hci_type = peek_buf[0];
 
-	peek_buf = &peek_buf[H4_HDR_SIZE];
-	peek_len -= H4_HDR_SIZE;
-
 	switch (hci_type) {
 	case H4_EVT:
-		return rx_alloc_h4_evt(peek_buf, peek_len, out_alloc);
+		*current_parser = rx_alloc_h4_evt;
+		break;
 	case H4_ACL:
-		return rx_alloc_h4_acl(peek_buf, peek_len, out_alloc);
+		*current_parser = rx_alloc_h4_acl;
+		break
 	default:
 		LOG_ERR("Unexpected hci type: %u", hci_type);
+		*current_parser = NULL;
 		return -EIO;
 	}
+
+	return (*current_parser)(peek_buf, peek_len, out_alloc);
 }
 
 // try a function-pointer-based approach

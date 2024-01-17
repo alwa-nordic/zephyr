@@ -423,19 +423,32 @@ static void rx_thread_entry(void *p1, void *p2, void *p3)
 
 	while (1) {
 		size_t have_len = 0;
-		uint8_t *active_buf = NULL;
+		uint8_t *active_buf = peek_buf;
 		struct net_buf *buf = NULL;
 
 		bool busy;
 		uint8_t peek_buf[4];
 
-		if (buf) {
-			active_buf = buf->data;
-		} else {
+		ret = rx_alloc_h4(active_buf, have_len, &buf);
+		if (ret < 0) {
+			__ASSERT_NO_MSG(ret == -EIO);
+			/* Desync */
+			__ASSERT_NO_MSG(false);
 		}
 
-		rx_alloc_h4(active_buf, have_len, &buf);
+		read_len = ret;
+
+		if (buf) {
+			active_buf = net_buf_add_mem(buf, peek_buf, have_len);
+			err = blocking_read(active_buf, read_len);
+
+		}
+
 		err = blocking_read(active_buf, read_len);
+		if (active_buf == &buf->data) {
+			net_buf_add_mem(buf, active_buf, read_len);
+		}
+
 		if (err) {
 			__ASSERT_NO_MSG(err == -EIO);
 			/* Desync */

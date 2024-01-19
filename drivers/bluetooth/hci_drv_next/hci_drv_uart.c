@@ -15,11 +15,8 @@ LOG_MODULE_REGISTER(hci_drv_h4, CONFIG_BT_HCI_DRIVER_LOG_LEVEL);
 static const struct device *const hci_uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_uart));
 
 struct hci_drv_state {
-	uint8_t *rx_buf;
-
-	/* Replace with a ring-buffer to preserve sequencing? */
-	enum hci_drv_result tx_result;
-	enum hci_drv_result rx_result;
+	int tx_result;
+	int rx_result;
 };
 
 struct hci_drv_state hci_drv_state;
@@ -30,24 +27,20 @@ static void uart_cb_tx_done(const struct device *dev, struct uart_event *evt, vo
 	 * mode. It can be 'aborted' by timeout or explicit
 	 * call, but this driver does not use these functions.
 	 */
-	hci_drv_state->tx_result = HCI_DRV_RESULT_TX_SUCCESS;
-	hci_drv_wakeup();
+	hci_drv_state->tx_result = 0;
+	hci_drv_cb(drv_sig_tx);
 }
 
 static void uart_cb_rx_disabled(const struct device *dev, struct uart_event *evt, void *user_data)
 {
-	struct hci_drv_state *s = user_data;
-
-	hci_drv_state->rx_result = HCI_DRV_RESULT_RX_SUCCESS;
-	hci_drv_wakeup();
+	hci_drv_state->rx_result = 0;
+	hci_drv_cb(drv_sig_rx);
 }
 
 static void uart_cb_rx_stopped(const struct device *dev, struct uart_event *evt, void *user_data)
 {
-	struct hci_drv_state *s = user_data;
-
-	hci_drv_state->rx_result = HCI_DRV_RESULT_RX_FAILURE;
-	hci_drv_wakeup();
+	hci_drv_state->rx_result = -EIO;
+	hci_drv_cb(drv_sig_rx);
 }
 
 static void uart_cb(const struct device *dev, struct uart_event *evt, void *user_data)
@@ -88,7 +81,10 @@ int hci_drv_init(void)
 {
 	int err;
 
-	memset(hci_drv_state, 0, sizeof(struct hci_drv_state));
+	hci_drv_state = (struct hci_drv_state){
+		.tx_result = -EAGAIN,
+		.rx_result = -EAGAIN,
+	};
 
 	err = uart_callback_set(hci_uart_dev, uart_cb, NULL);
 	if (err) {
@@ -99,11 +95,11 @@ int hci_drv_init(void)
 	return 0;
 }
 
-int hci_drv_read_into(uint8_t *dst, size_t read_len)
+int hci_drv_read_into(uint8_t *dst, size_t len)
 {
 	int err;
 
-	err = uart_rx_enable(hci_uart_dev, dst, read_len, SYS_FOREVER_US);
+	err = uart_rx_enable(hci_uart_dev, dst, len, SYS_FOREVER_US);
 	if (err) {
 		LOG_ERR("UART RX start failed: %d", err);
 		return -EIO;
@@ -114,31 +110,29 @@ int hci_drv_read_into(uint8_t *dst, size_t read_len)
 
 enum hci_drv_result hci_drv_process_rx(void)
 {
-	if (hci_drv_state->rx_result == HCI_DRV_RESULT_RX_SUCCESS) {
-		hci_drv_state->rx_result = HCI_DRV_RESULT_NOTHING;
+	int err;
 
-		return HCI_DRV_RESULT_RX_SUCCESS;
-	}
+	err = hci_drv_state->rx_result;
+	hci_drv_state->rx_result = -EAGAIN;
 
-	return HCI_DRV_RESULT_NOTHING;
+	return err;
 }
 
 enum hci_drv_result hci_drv_process_tx(void)
 {
-	if (hci_drv_state->tx_result == HCI_DRV_RESULT_TX_SUCCESS) {
-		hci_drv_state->tx_result = HCI_DRV_RESULT_NOTHING;
+	int err;
 
-		return HCI_DRV_RESULT_TX_SUCCESS;
-	}
+	err = hci_drv_state->tx_result;
+	hci_drv_state->rx_result = -EAGAIN;
 
-	return HCI_DRV_RESULT_NOTHING;
+	return err;
 }
 
-int hci_drv_write_from(const uint8_t *data, size_t size)
+int hci_drv_write(const uint8_t *src, size_t len)
 {
 	int err;
 
-	err = uart_tx(hci_uart_dev, data, size, SYS_FOREVER_US);
+	err = uart_tx(hci_uart_dev, src, len, SYS_FOREVER_US);
 	if (err) {
 		LOG_ERR("UART tx start failed: %d", err);
 		return -EIO;

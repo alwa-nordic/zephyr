@@ -16,7 +16,11 @@ endif()
 zephyr_library_sources_ifdef(CONFIG_BT_B91         hci_b91.c)
 zephyr_library_sources_ifdef(CONFIG_BT_AIROC       cyw43xxx.c)
 zephyr_library_sources_ifdef(CONFIG_BT_ESP32       hci_esp32.c)
-zephyr_library_sources_ifdef(CONFIG_BT_H4          h4.c)
+zephyr_library_sources_ifdef(CONFIG_BT_H4
+  ../hci_drv_next/hci_drv_h4_featureless.c
+  ../hci_drv_next/hci_drv_uart_sync.c
+  ../hci_drv_next/hci_drv_uart.c
+)
 zephyr_library_sources_ifdef(CONFIG_BT_H5          h5.c)
 zephyr_library_sources_ifdef(CONFIG_BT_HCI_IPC     ipc.c)
 if(CONFIG_BT_SPI)

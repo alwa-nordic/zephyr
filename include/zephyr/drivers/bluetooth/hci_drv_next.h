@@ -54,7 +54,7 @@ enum drv_sig {
  * Please return from the ISR as soon as possible, and call the
  * process function from a thread you own.
  */
-void hci_drv_cb(uint8_t drv_sig, int err);
+void hci_drv_cb(uint8_t drv_sig);
 
 /**
  * Async step. May perform some fast, non-blocking internal
@@ -67,3 +67,6 @@ void hci_drv_cb(uint8_t drv_sig, int err);
  */
 int hci_drv_process_rx(void);
 int hci_drv_process_tx(void);
+
+int hci_drv_read_sync(uint8_t *dst, size_t len);
+int hci_drv_write_sync(uint8_t *src, size_t len);

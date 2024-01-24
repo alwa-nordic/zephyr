@@ -12,6 +12,8 @@ simulation_id="basic_conn_split_uart"
 verbosity_level=2
 EXECUTE_TIMEOUT=10
 
+pwd0="$(pwd)"
+
 cd ${BSIM_OUT_PATH}/bin
 
 UART_DIR=/tmp/bs_${USER}/${simulation_id}/
@@ -29,6 +31,8 @@ Execute ./bs_${BOARD}_tests_bsim_bluetooth_ll_conn_prj_split_uart_conf \
 Execute ./bs_${BOARD}_samples_bluetooth_hci_uart_prj_conf \
   -v=${verbosity_level} -s=${simulation_id} -d=0 -RealEncryption=0 \
   -rs=23 -uart1_fifob_rxfile=${UART_PER}.tx -uart1_fifob_txfile=${UART_PER}.rx \
+  -uart1_log_txfile="$pwd0/hci_tx.bsim_uart" \
+  -uart1_log_rxfile="$pwd0/hci_rx.bsim_uart"
 
 # Central app + host
 Execute ./bs_${BOARD}_tests_bsim_bluetooth_ll_conn_prj_split_uart_conf\

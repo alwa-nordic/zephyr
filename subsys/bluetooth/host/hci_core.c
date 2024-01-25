@@ -3848,6 +3848,10 @@ int bt_recv(struct net_buf *buf)
 #endif /* BT_CONN */
 	case BT_BUF_EVT:
 	{
+		if (evt_flags & BT_HCI_EVT_FLAG_RECV && pool(buf)==isr_pool) {
+			unref(buf);
+			return 0;
+		}
 #if defined(CONFIG_BT_RECV_BLOCKING)
 		hci_event(buf);
 #else

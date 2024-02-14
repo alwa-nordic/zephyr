@@ -1,0 +1,1 @@
+flatpak run --command=text2pcap org.wireshark.Wireshark -E bluetooth-h4 -t "%H:%M:%S.%f" -r 'd_\d+: @(?<time>\d+:\d\d:\d\d.\d+)[^:]+: [^:]+: (?<dir>[IO])(\nd_\d+: @(\d+:\d\d:\d\d.\d+) +(?<data>.{49}).*)+' - - < capture.txt > hci.pcap

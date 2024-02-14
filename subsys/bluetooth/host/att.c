@@ -30,7 +30,7 @@
 #include "att_internal.h"
 #include "gatt_internal.h"
 
-#define LOG_LEVEL CONFIG_BT_ATT_LOG_LEVEL
+#define LOG_LEVEL 4
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_att);
 

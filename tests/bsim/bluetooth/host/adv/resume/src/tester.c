@@ -28,7 +28,7 @@ void tester_central_procedure(void)
 	/* DUT is peripheral */
 
 	/* wait until DUT connects to peripheral, and that it has disconnected
-	 * from it afterwards.
+	 * from it afterwards.bsim/tester.
 	 */
 	backchannel_sync_wait();
 

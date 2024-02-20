@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
+from pathlib import Path
 import sys
+from typing import BinaryIO, Optional
 import pcapng
 import re
 import datetime
@@ -13,13 +16,13 @@ bsim_line_pattern = re.compile(
 )
 
 
-def parse_time(time: str) -> int:
+def parse_time(time: str) -> datetime.datetime:
     """time: like 00:00:01.123456"""
     return datetime.datetime.strptime(time, "%H:%M:%S.%f")
 
+epoch = datetime.datetime.strptime("", "")
 
 def time_to_us(time: datetime.datetime) -> int:
-    epoch = datetime.datetime.strptime("", "")
     return int((time - epoch).total_seconds() * 1_000_000)
 
 
@@ -27,9 +30,9 @@ def parse_bsim_line(line: str):
     match = bsim_line_pattern.fullmatch(line)
     if not match:
         return None, None, line
-    time_us = time_to_us(parse_time(match["timestamp"]))
+    time = parse_time(match["timestamp"])
     devnum = int(match["dev_num"])
-    return time_us, devnum, match["line"]
+    return time, devnum, match["line"]
 
 
 zlog_msg_pattern = re.compile(
@@ -97,65 +100,109 @@ def zhexdump_read(zhex):
 def strip_hex(dump):
     return "\n".join(line.partition("|")[0] for line in dump.splitlines())
 
-def main():
-    with open("/dev/stdout", "wb") as f:
-        f.write(pcapng.section_header_block())
 
-        interfaces = {}
+class Pcapng:
+    def __init__(self, file: BinaryIO) -> None:
+        self.interfaces = {}
+        self.file = file
+        self.file.write(pcapng.section_header_block())
 
-        def add_interface(name: str, link_type: int):
-            ifid = len(interfaces)
-            interfaces[name] = ifid
-            f.write(pcapng.interface_description_block(link_type, name))
+    def _add_interface(self, name: str, link_type: int):
+        self.file.write(pcapng.interface_description_block(link_type, name))
+        ifid = len(self.interfaces)
+        self.interfaces[name, link_type] = ifid
+        return ifid
 
-        def find_or_add_interface(name: str, link_type: int):
-            if name not in interfaces:
-                add_interface(name, link_type)
-            return interfaces[name]
+    def _find_or_add_interface(self, name: str, link_type: int):
+        if (name, link_type) not in self.interfaces:
+            return self._add_interface(name, link_type)
+        return self.interfaces[name, link_type]
 
-        def output_on_interface(name: str, link_type: int, time_us: int, data: bytes):
-            ifid = find_or_add_interface(name, link_type)
-            f.write(pcapng.enhanced_packet_block(ifid, time_us, data))
+    def output_on_interface(self, name: str, link_type: int, time: int, data: bytes):
+        ifid = self._find_or_add_interface(name, link_type)
+        time_us = time_to_us(time)
+        self.file.write(pcapng.enhanced_packet_block(ifid, time_us, data))
 
-        def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
-            if pri:
-                data = b"<" + pri + b">" + data
-            ifname = f"log_{devnum}"
-            output_on_interface(
-                ifname,
-                pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
-                time_us,
-                pcapng.exported_pdu("syslog", data),
-            )
+def syslog_entry(msg: str, *, pri: Optional[bytes] = None) -> bytes:
+    msg = msg.encode()
+    if pri:
+        msg = b"<" + pri + b">" + msg
+    return msg
 
-        def output_h4(dev: str, time_us: int, data: bytes):
-            ifname = f"hci_{devnum}"
-            output_on_interface(
-                ifname,
-                LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
-                time_us,
-                data,
-            )
+def main(args):
+    pcap = Pcapng(args.output)
 
-        output = sys.stdin
-        output = (line.rstrip("\n") for line in output)
-        output = (parse_bsim_line(line) for line in output)
-        output = bsim_parallel_devices(output)
-        for line in output:
-            if not line:
-                continue
-            time_us, devnum, (prio, msg) = line
-            if time_us is None:
-                time_us = 0
-            pri = zlog_pri_to_syslog[prio]
-            devname = str(devnum)
-            if "!HCI!" in msg:
-                data = strip_hex(msg.partition("!HCI!")[2])
-                msg = bytes.fromhex(data)
-                output_h4(devname, time_us, msg)
-            else:
-                msg = msg.encode()
-                output_syslog(devname, time_us, pri, msg)
+    def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
+        if pri:
+            data = b"<" + pri + b">" + data
+        ifname = f"log_{devnum}"
+        pcap.output_on_interface(
+            ifname,
+            pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
+            time_us,
+            pcapng.exported_pdu("syslog", data),
+        )
+
+    def output_h4(dev: str, time_us: int, data: bytes):
+        ifname = f"hci_{devnum}"
+        pcap.output_on_interface(
+            ifname,
+            LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
+            time_us,
+            data,
+        )
+
+    output = sys.stdin
+    output = (line.rstrip("\n") for line in output)
+    output = (parse_bsim_line(line) for line in output)
+    output = bsim_parallel_devices(output)
+
+    prev_time = epoch
+    for line in output:
+        if not line:
+            continue
+        time, devnum, (prio, msg) = line
+        if time is None:
+            time = prev_time
+        prev_time = time
+        pri = zlog_pri_to_syslog[prio]
+        devname = str(devnum)
+        if "!HCI!" in msg:
+            data = strip_hex(msg.partition("!HCI!")[2])
+            msg = bytes.fromhex(data)
+            output_h4(devname, time, msg)
+        else:
+            msg = msg.encode()
+            output_syslog(devname, time, pri, msg)
+
+
+def valid_path(path: str) -> Path:
+    path = Path(path)
+    if not path.exists():
+        raise argparse.ArgumentTypeError(f"'{path.resolve()}' doesn't exist")
+    return path
+
+
+def wb_file(path: str) -> Path:
+    return open(path, "wb")
+
+def read_args() -> dict:
+    parser = argparse.ArgumentParser(description="Pcap made easy")
+    parser.add_argument(
+        "--bsim",
+        action="store_true",
+        help="Read from bsim log format (with the 'd_XX: @HH:MM:SS.ssssss  ' prefix)",
+    )
+    parser.add_argument(
+        "--output",
+        required=True,
+        type=wb_file,
+        help="output filename.pcapng",
+    )
+
+    return parser.parse_args()
+
 
 if __name__ == "__main__":
-    main()
+    args = read_args()
+    main(args)

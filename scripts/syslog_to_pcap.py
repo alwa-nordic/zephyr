@@ -46,6 +46,7 @@ zlog_msg_pattern = re.compile(
     "(?P<start> \\[(?P<timestamp>[^]]*)\\] \x1b\\[[0-9;]+m<(?P<prio>[^>]+)> )?(?P<msg>[^\x1b]*)(?P<end>\x1b\\[0m)?"
 )
 
+
 def zlog_msg_match(line):
     # This pattern always matches. If it does not match a zlog
     # message, both start and end will be None.
@@ -68,10 +69,12 @@ def zlog_assembler():
                 msg += "\n" + line["msg"]
         line = yield prio, msg
 
+
 def launch_zlog_assembler():
     x = zlog_assembler()
     next(x)
     return x
+
 
 def bsim_parallel_devices(lines):
     devs = defaultdict(launch_zlog_assembler)
@@ -92,47 +95,63 @@ def bsim_parallel_devices(lines):
         if msg is not None:
             yield time_us, devnum, msg
 
+
 zlog_pri_to_syslog = {
-    None: b'6',
-    'err': b'3',
-    'wrn': b'4',
-    'inf': b'6',
-    'dbg': b'7',
+    None: b"6",
+    "err": b"3",
+    "wrn": b"4",
+    "inf": b"6",
+    "dbg": b"7",
 }
 
+
 def zhexdump_read(zhex):
-    return bytes.fromhex(''.join(line[:73] for line in zhex.splitlines()[1:]))
+    return bytes.fromhex("".join(line[:73] for line in zhex.splitlines()[1:]))
+
 
 PHDR_C2H = b"\x00\x00\x00\x00"
 PHDR_H2C = b"\x00\x00\x00\x01"
 
 with open("/dev/stdout", "wb") as f:
     f.write(pcapng.section_header_block())
-    # Syslog 'None'
-    f.write(pcapng.interface_description_block(pcapng.LINKTYPE_WIRESHARK_UPPER_PDU))
-    # Syslog 'd1'
-    f.write(pcapng.interface_description_block(pcapng.LINKTYPE_WIRESHARK_UPPER_PDU))
-    # H4 'd1'
-    f.write(pcapng.interface_description_block(LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR))
-    # Syslog 'd2'
-    f.write(pcapng.interface_description_block(pcapng.LINKTYPE_WIRESHARK_UPPER_PDU))
-    # H4 'd2'
-    f.write(pcapng.interface_description_block(LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR))
 
-    def output_syslog(devnum: int, time_us: int, pri: bytes | None, data: bytes):
+    interfaces = {}
+
+    def add_interface(name: str, link_type: int):
+        ifid = len(interfaces)
+        interfaces[name] = ifid
+        f.write(pcapng.interface_description_block(link_type, name))
+
+    def find_or_add_interface(name: str, link_type: int):
+        if name not in interfaces:
+            add_interface(name, link_type)
+        return interfaces[name]
+
+    def output_on_interface(name: str, link_type: int, time_us: int, data: bytes):
+        ifid = find_or_add_interface(name, link_type)
+        f.write(pcapng.enhanced_packet_block(ifid, time_us, data))
+
+    pcapng.LINKTYPE_WIRESHARK_UPPER_PDU
+    LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR
+
+    def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
         if pri:
             data = b"<" + pri + b">" + data
-        f.write(
-            pcapng.enhanced_packet_block(
-                devnum, time_us, pcapng.exported_pdu("syslog", data)
-            )
+        ifname = f"log_{devnum}"
+        output_on_interface(
+            ifname,
+            pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
+            time_us,
+            pcapng.exported_pdu("syslog", data),
         )
 
-    def output_h4(devnum: int, time_us: int, data: bytes):
-        f.write(
-            pcapng.enhanced_packet_block(
-                devnum, time_us, data
-            )
+    def output_h4(dev: str, time_us: int, data: bytes):
+        ifname = f"hci_{devnum}"
+        output_on_interface(
+            ifname,
+            LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
+            time_us,
+            data,
         )
 
     output = sys.stdin
@@ -145,20 +164,14 @@ with open("/dev/stdout", "wb") as f:
         time_us, devnum, (prio, msg) = line
         if time_us is None:
             time_us = 0
-        if devnum is None:
-            devnum = 0
-        else:
-            devnum *= 2
-            devnum += 1
         pri = zlog_pri_to_syslog[prio]
+        devname = str(devnum)
         if "!H2C!" in msg:
-            devnum = devnum + 1
             msg = PHDR_C2H + zhexdump_read(msg)
-            output_h4(devnum, time_us, msg)
+            output_h4(devname, time_us, msg)
         elif "recv_expect: I\n" in msg:
-            devnum = devnum + 1
             msg = PHDR_H2C + zhexdump_read(msg)
-            output_h4(devnum, time_us, msg)
+            output_h4(devname, time_us, msg)
         else:
-            msg =  msg.encode()
-            output_syslog(devnum, time_us, pri, msg)
+            msg = msg.encode()
+            output_syslog(devname, time_us, pri, msg)

@@ -6,19 +6,7 @@ import re
 import datetime
 from collections import defaultdict
 
-LINKTYPE_BLUETOOTH_HCI_H4 = 187
 LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR = 201
-
-PHDR_C2H = b"\x00\x00\x00\x00"
-PHDR_H2C = b"\x00\x00\x00\x01"
-H4_HCI_RESET = b"\x01\x03\x0C\x00"
-
-ansi_term_escape_pattern = re.compile("\x1b\\[[0-9;]*[a-zA-Z]")
-
-
-def remove_ansi_term_escapes(data: str) -> str:
-    return ansi_term_escape_pattern.sub("", data)
-
 
 bsim_line_pattern = re.compile(
     r"d_(?P<dev_num>\d{2}): @(?P<timestamp>\d{2}:\d{2}:\d{2}\.\d{6}) {2}(?P<line>.*)"
@@ -53,11 +41,6 @@ def zlog_msg_match(line):
     # This pattern always matches. If it does not match a zlog
     # message, both start and end will be None.
     return zlog_msg_pattern.fullmatch(line).groupdict()
-
-
-# input tuples: start msg end
-# states: line-based, (msg-based current-msg)
-# transitions: start -> msg, msg -> msg, msg -> end
 
 
 def zlog_assembler():
@@ -114,8 +97,6 @@ def zhexdump_read(zhex):
 def strip_hex(dump):
     return "\n".join(line.partition("|")[0] for line in dump.splitlines())
 
-PHDR_C2H = b"\x00\x00\x00\x00"
-PHDR_H2C = b"\x00\x00\x00\x01"
 
 with open("/dev/stdout", "wb") as f:
     f.write(pcapng.section_header_block())
@@ -135,9 +116,6 @@ with open("/dev/stdout", "wb") as f:
     def output_on_interface(name: str, link_type: int, time_us: int, data: bytes):
         ifid = find_or_add_interface(name, link_type)
         f.write(pcapng.enhanced_packet_block(ifid, time_us, data))
-
-    pcapng.LINKTYPE_WIRESHARK_UPPER_PDU
-    LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR
 
     def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
         if pri:

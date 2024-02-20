@@ -123,20 +123,23 @@ static uint8_t h4_evt_le_conn_complete[] = {H4_EVT, 0x3e, 0x13, 0x01, 0x00, 0x00
 					    0x01,   0x01, 0x00, 0x00, 0x00, 0x00, 0xc0, 0x28,
 					    0x00,   0x00, 0x00, 0x2a, 0x00, 0x05};
 
+#define HANDLE_AND_FLAGS(handle, pb, bc) ((handle & 0xfff) | (pb * 0x1000) | (bc * 0x3000))
+
+#define H4_ACL_PKT(handle, pb, ...)                                                                \
+	H4_ACL, BT_BYTES_LIST_LE16(HANDLE_AND_FLAGS(handle, pb, 0)),                               \
+		BT_BYTES_LIST_LE16(sizeof(((uint8_t[]){__VA_ARGS__}))), __VA_ARGS__
+
+#define H4_L2CAP_PKT(handle, cid, ...)                                                             \
+	H4_ACL_PKT(handle, 0, BT_BYTES_LIST_LE16(sizeof(((uint8_t[]){__VA_ARGS__}))),              \
+		   BT_BYTES_LIST_LE16(cid), __VA_ARGS__)
+
+#define H4_ATT_PKT(handle, op, ...) H4_L2CAP_PKT(handle, BT_L2CAP_CID_ATT, op, __VA_ARGS__)
+
 #define H4_ATT_MTU_REQ(mtu)                                                                        \
-	((uint8_t[]){H4_ACL, 0x00, 0x00, BT_BYTES_LIST_LE16(3 + 2), BT_BYTES_LIST_LE16(3),         \
-		     BT_BYTES_LIST_LE16(BT_L2CAP_CID_ATT), BT_ATT_OP_MTU_REQ,                      \
-		     BT_BYTES_LIST_LE16(mtu)})
+	((uint8_t[]){H4_ATT_PKT(0, BT_ATT_OP_MTU_REQ, BT_BYTES_LIST_LE16(mtu))})
 
 static uint8_t h4_acl_att_read_x1002[] = {
-	H4_ACL,
-	0x00,
-	0x00,                                 // handle 0, PB=0, BC=0
-	BT_BYTES_LIST_LE16(3 + 4),            // acl len
-	BT_BYTES_LIST_LE16(3),                // l2cap len
-	BT_BYTES_LIST_LE16(BT_L2CAP_CID_ATT), // l2cap cid
-	BT_ATT_OP_READ_REQ,
-	BT_BYTES_LIST_LE16(0x1002),
+	H4_ATT_PKT(0, BT_ATT_OP_READ_REQ, BT_BYTES_LIST_LE16(0x1002)),
 };
 
 int main(void)

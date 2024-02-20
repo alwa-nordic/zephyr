@@ -44,6 +44,7 @@
 
 #include "addr_internal.h"
 #include "conn_internal.h"
+#include "hci_log_hexdump.h"
 #include "iso_internal.h"
 #include "l2cap_internal.h"
 #include "gatt_internal.h"
@@ -3781,10 +3782,9 @@ static int hci_init(void)
 
 int bt_send(struct net_buf *buf)
 {
-	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 00 %02x", bt_buf_h4_type(buf));
-
 	LOG_DBG("buf %p len %u type %u", buf, buf->len, bt_buf_get_type(buf));
 
+	bt_hci_log_hexdump(buf);
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	if (IS_ENABLED(CONFIG_BT_TINYCRYPT_ECC)) {
@@ -3858,8 +3858,7 @@ static void rx_queue_put(struct net_buf *buf)
 
 int bt_recv(struct net_buf *buf)
 {
-	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 01 %02x", bt_buf_h4_type(buf));
-
+	bt_hci_log_hexdump(buf);
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	LOG_DBG("buf %p len %u", buf, buf->len);
@@ -3911,8 +3910,7 @@ int bt_recv(struct net_buf *buf)
 
 int bt_recv_prio(struct net_buf *buf)
 {
-	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 01 %02x", bt_buf_h4_type(buf));
-
+	bt_hci_log_hexdump(buf);
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	BT_ASSERT(bt_buf_get_type(buf) == BT_BUF_EVT);

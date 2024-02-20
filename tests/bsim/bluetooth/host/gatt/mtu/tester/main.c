@@ -33,7 +33,7 @@ static inline void expect_zero(int err, char *where_file, int where_line)
 static void send(size_t size, uint8_t (*data)[size])
 {
 	struct net_buf *buf;
-	LOG_HEXDUMP_DBG(data, size, "!H2C!");
+	LOG_HEXDUMP_DBG(data, size, "!HCI H2C!");
 	buf = bt_buf_get_tx(BT_BUF_H4, K_NO_WAIT, *data, size);
 	if (!buf) {
 		LOG_ERR("bt_buf_get_tx failed");
@@ -48,10 +48,8 @@ static void recv_expect(size_t size, uint8_t (*data)[size])
 {
 	struct net_buf *buf;
 
-	LOG_DBG("Waiting for packet");
 	buf = k_fifo_get(&c2h_queue, K_FOREVER);
-	LOG_HEXDUMP_DBG(buf->data, buf->len, "I");
-	LOG_DBG("Received packet");
+	LOG_HEXDUMP_DBG(buf->data, buf->len, "!HCI C2H!");
 	if (buf->len != size || memcmp(buf->data, data, size)) {
 		LOG_ERR("Received packet of wrong data");
 		k_oops();
@@ -143,7 +141,6 @@ static uint8_t h4_acl_att_read_x1002[] = {
 
 int main(void)
 {
-	LOG_INF("hello\nworld");
 	k_fifo_init(&c2h_queue);
 	EXPECT_ZERO(bt_enable_raw(&c2h_queue));
 

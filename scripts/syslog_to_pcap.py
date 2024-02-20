@@ -166,10 +166,10 @@ with open("/dev/stdout", "wb") as f:
             time_us = 0
         pri = zlog_pri_to_syslog[prio]
         devname = str(devnum)
-        if "!H2C!" in msg:
+        if "!HCI H2C!" in msg:
             msg = PHDR_C2H + zhexdump_read(msg)
             output_h4(devname, time_us, msg)
-        elif "recv_expect: I\n" in msg:
+        elif "!HCI C2H!" in msg:
             msg = PHDR_H2C + zhexdump_read(msg)
             output_h4(devname, time_us, msg)
         else:

@@ -97,62 +97,65 @@ def zhexdump_read(zhex):
 def strip_hex(dump):
     return "\n".join(line.partition("|")[0] for line in dump.splitlines())
 
+def main():
+    with open("/dev/stdout", "wb") as f:
+        f.write(pcapng.section_header_block())
 
-with open("/dev/stdout", "wb") as f:
-    f.write(pcapng.section_header_block())
+        interfaces = {}
 
-    interfaces = {}
+        def add_interface(name: str, link_type: int):
+            ifid = len(interfaces)
+            interfaces[name] = ifid
+            f.write(pcapng.interface_description_block(link_type, name))
 
-    def add_interface(name: str, link_type: int):
-        ifid = len(interfaces)
-        interfaces[name] = ifid
-        f.write(pcapng.interface_description_block(link_type, name))
+        def find_or_add_interface(name: str, link_type: int):
+            if name not in interfaces:
+                add_interface(name, link_type)
+            return interfaces[name]
 
-    def find_or_add_interface(name: str, link_type: int):
-        if name not in interfaces:
-            add_interface(name, link_type)
-        return interfaces[name]
+        def output_on_interface(name: str, link_type: int, time_us: int, data: bytes):
+            ifid = find_or_add_interface(name, link_type)
+            f.write(pcapng.enhanced_packet_block(ifid, time_us, data))
 
-    def output_on_interface(name: str, link_type: int, time_us: int, data: bytes):
-        ifid = find_or_add_interface(name, link_type)
-        f.write(pcapng.enhanced_packet_block(ifid, time_us, data))
+        def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
+            if pri:
+                data = b"<" + pri + b">" + data
+            ifname = f"log_{devnum}"
+            output_on_interface(
+                ifname,
+                pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
+                time_us,
+                pcapng.exported_pdu("syslog", data),
+            )
 
-    def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
-        if pri:
-            data = b"<" + pri + b">" + data
-        ifname = f"log_{devnum}"
-        output_on_interface(
-            ifname,
-            pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
-            time_us,
-            pcapng.exported_pdu("syslog", data),
-        )
+        def output_h4(dev: str, time_us: int, data: bytes):
+            ifname = f"hci_{devnum}"
+            output_on_interface(
+                ifname,
+                LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
+                time_us,
+                data,
+            )
 
-    def output_h4(dev: str, time_us: int, data: bytes):
-        ifname = f"hci_{devnum}"
-        output_on_interface(
-            ifname,
-            LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
-            time_us,
-            data,
-        )
+        output = sys.stdin
+        output = (line.rstrip("\n") for line in output)
+        output = (parse_bsim_line(line) for line in output)
+        output = bsim_parallel_devices(output)
+        for line in output:
+            if not line:
+                continue
+            time_us, devnum, (prio, msg) = line
+            if time_us is None:
+                time_us = 0
+            pri = zlog_pri_to_syslog[prio]
+            devname = str(devnum)
+            if "!HCI!" in msg:
+                data = strip_hex(msg.partition("!HCI!")[2])
+                msg = bytes.fromhex(data)
+                output_h4(devname, time_us, msg)
+            else:
+                msg = msg.encode()
+                output_syslog(devname, time_us, pri, msg)
 
-    output = sys.stdin
-    output = (line.rstrip("\n") for line in output)
-    output = (parse_bsim_line(line) for line in output)
-    output = bsim_parallel_devices(output)
-    for line in output:
-        if not line:
-            continue
-        time_us, devnum, (prio, msg) = line
-        if time_us is None:
-            time_us = 0
-        pri = zlog_pri_to_syslog[prio]
-        devname = str(devnum)
-        if "!HCI!" in msg:
-            data = strip_hex(msg.partition("!HCI!")[2])
-            msg = bytes.fromhex(data)
-            output_h4(devname, time_us, msg)
-        else:
-            msg = msg.encode()
-            output_syslog(devname, time_us, pri, msg)
+if __name__ == "__main__":
+    main()

@@ -33,7 +33,7 @@ static inline void expect_zero(int err, char *where_file, int where_line)
 static void send(size_t size, uint8_t (*data)[size])
 {
 	struct net_buf *buf;
-	LOG_HEXDUMP_DBG(data, size, "O");
+	LOG_HEXDUMP_DBG(data, size, "!H2C!");
 	buf = bt_buf_get_tx(BT_BUF_H4, K_NO_WAIT, *data, size);
 	if (!buf) {
 		LOG_ERR("bt_buf_get_tx failed");
@@ -143,6 +143,7 @@ static uint8_t h4_acl_att_read_x1002[] = {
 
 int main(void)
 {
+	LOG_INF("hello\nworld");
 	k_fifo_init(&c2h_queue);
 	EXPECT_ZERO(bt_enable_raw(&c2h_queue));
 

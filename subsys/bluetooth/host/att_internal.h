@@ -1,5 +1,6 @@
 /* att_internal.h - Attribute protocol handling */
 
+#include <zephyr/bluetooth/att.h>
 #include <zephyr/bluetooth/l2cap.h>
 
 /*

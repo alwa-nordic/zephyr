@@ -81,8 +81,7 @@ EXPORTED_PDU_TAG_DISSECTOR_NAME = 12
 
 def exported_pdu_tag(tag: int, data: bytes) -> bytes:
     length = len(data)
-    # should this be big-endian?
-    # should this be padded to 4 bytes?
+    # Experiments show this must be big endian and not padded.
     return struct.pack(">H", tag) + struct.pack(">H", length) + data
 
 

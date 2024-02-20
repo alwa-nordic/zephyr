@@ -7,3 +7,9 @@ flatpak run --command=text2pcap org.wireshark.Wireshark -E bluetooth-h4 -t "%H:%
 ./_build.sh && ./run.sh 2>&1 | tee output.txt
 >($ZEPHYR_BASE/scripts/syslog_to_pcap.py > output.pcapng)
 ```
+
+```
+Monoid m a => (a -> Bool) -> [a] -> [a]
+(a -> b) -> [a] -> [(a,b)]
+
+```

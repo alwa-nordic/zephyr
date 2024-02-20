@@ -60,14 +60,47 @@ def zlog_assembler():
         line = yield prio, msg
 
 
-def launch_zlog_assembler():
-    x = zlog_assembler()
-    next(x)
-    return x
+def self_starting(g):
+    """Make generator into pipe"""
+
+    def launch():
+        gi = g()
+        next(gi)
+        return gi
+
+    return launch
+
+
+def eval(sexp):
+    return sexp[0](*sexp[1:])
+
+
+# scan1 (flip ($)) |> butts
+
+
+def dispatch(workers, jobs):
+    for worker_id, item in jobs:
+        yield worker_id, workers(worker_id)(item)
+
+
+# map (worker, item) -> Maybe result -> map (worker,)
+# not None
+def parallel_digest(workers, jobs):
+    for worker_id, result in dispatch(workers, jobs):
+        if result is not None:
+            yield worker_id, result
+
+
+def map_fst(f, xys):
+    return ((f(x), y) for x, y in xys)
+
+
+def defaultdict_selector(feed):
+    return map_fst(defaultdict(self_starting(zlog_assembler)).get, feed)
 
 
 def bsim_parallel_devices(lines):
-    devs = defaultdict(launch_zlog_assembler)
+    devs = defaultdict(self_starting(zlog_assembler))
     for line in lines:
         time_us, devnum, msg = line
 
@@ -103,7 +136,7 @@ def strip_hex(dump):
     return "\n".join(line.partition("|")[0] for line in dump.splitlines())
 
 
-class Pcapng:
+class PcapngOutput:
     def __init__(self, file: BinaryIO) -> None:
         self.interfaces = {}
         self.file = file
@@ -126,35 +159,37 @@ class Pcapng:
         self.file.write(pcapng.enhanced_packet_block(ifid, time_us, data))
 
 
-def syslog_entry(msg: str, *, pri: Optional[bytes] = None) -> bytes:
+def syslog_pdu(msg: str, *, pri: Optional[bytes] = None) -> bytes:
     msg = msg.encode()
     if pri:
         msg = b"<" + pri + b">" + msg
     return msg
 
 
+def output_syslog(
+    pcap: PcapngOutput, dev: str, time_us: int, pri: bytes | None, msg: str
+):
+    ifname = f"log_{dev}"
+    pcap.output_on_interface(
+        ifname,
+        pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
+        time_us,
+        pcapng.exported_pdu("syslog", syslog_pdu(msg, pri=pri)),
+    )
+
+
+def output_h4(pcap: PcapngOutput, dev: str, time_us: int, data: bytes):
+    ifname = f"hci_{dev}"
+    pcap.output_on_interface(
+        ifname,
+        LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
+        time_us,
+        data,
+    )
+
+
 def main(args):
-    pcap = Pcapng(args.output)
-
-    def output_syslog(dev: str, time_us: int, pri: bytes | None, data: bytes):
-        if pri:
-            data = b"<" + pri + b">" + data
-        ifname = f"log_{devnum}"
-        pcap.output_on_interface(
-            ifname,
-            pcapng.LINKTYPE_WIRESHARK_UPPER_PDU,
-            time_us,
-            pcapng.exported_pdu("syslog", data),
-        )
-
-    def output_h4(dev: str, time_us: int, data: bytes):
-        ifname = f"hci_{devnum}"
-        pcap.output_on_interface(
-            ifname,
-            LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR,
-            time_us,
-            data,
-        )
+    pcap = PcapngOutput(args.output)
 
     output = args.input
     output = (line.rstrip("\n") for line in output)
@@ -174,10 +209,9 @@ def main(args):
         if "!HCI!" in msg:
             data = strip_hex(msg.partition("!HCI!")[2])
             msg = bytes.fromhex(data)
-            output_h4(devname, time, msg)
+            output_h4(pcap, devname, time, msg)
         else:
-            msg = msg.encode()
-            output_syslog(devname, time, pri, msg)
+            output_syslog(pcap, devname, time, pri, msg)
 
 
 def valid_path(path: str) -> Path:

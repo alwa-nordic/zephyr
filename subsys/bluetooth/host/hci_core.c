@@ -3691,6 +3691,30 @@ static void hci_vs_init(void)
 }
 #endif /* CONFIG_BT_HCI_VS_EXT */
 
+#define H4_CMD 0x01
+#define H4_ACL 0x02
+#define H4_SCO 0x03
+#define H4_EVT 0x04
+#define H4_ISO 0x05
+
+uint8_t bt_buf_h4_type(struct net_buf *buf)
+{
+	switch (bt_buf_get_type(buf)) {
+	case BT_BUF_CMD:
+		return H4_CMD;
+	case BT_BUF_EVT:
+		return H4_EVT;
+	case BT_BUF_ACL_IN:
+	case BT_BUF_ACL_OUT:
+		return H4_ACL;
+	case BT_BUF_ISO_IN:
+	case BT_BUF_ISO_OUT:
+		return H4_ISO;
+	default:
+		__ASSERT_NO_MSG(false);
+	}
+}
+
 static int hci_init(void)
 {
 	int err;
@@ -3757,6 +3781,8 @@ static int hci_init(void)
 
 int bt_send(struct net_buf *buf)
 {
+	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 00 %02x", bt_buf_h4_type(buf));
+
 	LOG_DBG("buf %p len %u type %u", buf, buf->len, bt_buf_get_type(buf));
 
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
@@ -3832,6 +3858,8 @@ static void rx_queue_put(struct net_buf *buf)
 
 int bt_recv(struct net_buf *buf)
 {
+	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 01 %02x", bt_buf_h4_type(buf));
+
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	LOG_DBG("buf %p len %u", buf, buf->len);
@@ -3883,6 +3911,8 @@ int bt_recv(struct net_buf *buf)
 
 int bt_recv_prio(struct net_buf *buf)
 {
+	Z_LOG_HEXDUMP(LOG_LEVEL_INF, buf->data, buf->len, "!HCI! 00 00 00 01 %02x", bt_buf_h4_type(buf));
+
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	BT_ASSERT(bt_buf_get_type(buf) == BT_BUF_EVT);

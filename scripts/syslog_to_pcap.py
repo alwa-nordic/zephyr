@@ -109,6 +109,9 @@ def zhexdump_read(zhex):
     return bytes.fromhex("".join(line[:73] for line in zhex.splitlines()[1:]))
 
 
+def strip_hex(dump):
+    return "\n".join(line.partition("|")[0] for line in dump.splitlines())
+
 PHDR_C2H = b"\x00\x00\x00\x00"
 PHDR_H2C = b"\x00\x00\x00\x01"
 
@@ -166,11 +169,9 @@ with open("/dev/stdout", "wb") as f:
             time_us = 0
         pri = zlog_pri_to_syslog[prio]
         devname = str(devnum)
-        if "!HCI H2C!" in msg:
-            msg = PHDR_C2H + zhexdump_read(msg)
-            output_h4(devname, time_us, msg)
-        elif "!HCI C2H!" in msg:
-            msg = PHDR_H2C + zhexdump_read(msg)
+        if "!HCI!" in msg:
+            data = strip_hex(msg.partition("!HCI!")[2])
+            msg = bytes.fromhex(data)
             output_h4(devname, time_us, msg)
         else:
             msg = msg.encode()

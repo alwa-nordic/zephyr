@@ -20,7 +20,9 @@ def parse_time(time: str) -> datetime.datetime:
     """time: like 00:00:01.123456"""
     return datetime.datetime.strptime(time, "%H:%M:%S.%f")
 
+
 epoch = datetime.datetime.strptime("", "")
+
 
 def time_to_us(time: datetime.datetime) -> int:
     return int((time - epoch).total_seconds() * 1_000_000)
@@ -123,11 +125,13 @@ class Pcapng:
         time_us = time_to_us(time)
         self.file.write(pcapng.enhanced_packet_block(ifid, time_us, data))
 
+
 def syslog_entry(msg: str, *, pri: Optional[bytes] = None) -> bytes:
     msg = msg.encode()
     if pri:
         msg = b"<" + pri + b">" + msg
     return msg
+
 
 def main(args):
     pcap = Pcapng(args.output)
@@ -152,7 +156,7 @@ def main(args):
             data,
         )
 
-    output = sys.stdin
+    output = args.input
     output = (line.rstrip("\n") for line in output)
     output = (parse_bsim_line(line) for line in output)
     output = bsim_parallel_devices(output)
@@ -183,8 +187,9 @@ def valid_path(path: str) -> Path:
     return path
 
 
-def wb_file(path: str) -> Path:
+def open_wb(path: str) -> Path:
     return open(path, "wb")
+
 
 def read_args() -> dict:
     parser = argparse.ArgumentParser(description="Pcap made easy")
@@ -193,10 +198,16 @@ def read_args() -> dict:
         action="store_true",
         help="Read from bsim log format (with the 'd_XX: @HH:MM:SS.ssssss  ' prefix)",
     )
+
     parser.add_argument(
-        "--output",
-        required=True,
-        type=wb_file,
+        "input",
+        type=argparse.FileType("r"),
+        help="input filename",
+    )
+
+    parser.add_argument(
+        "output",
+        type=argparse.FileType("wb"),
         help="output filename.pcapng",
     )
 

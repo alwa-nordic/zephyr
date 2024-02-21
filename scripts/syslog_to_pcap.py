@@ -53,11 +53,12 @@ def zlog_assembler():
     while True:
         prio = line["prio"]
         msg = line["msg"]
+        timestamp = line["timestamp"]
         if line["start"]:
             while not line["end"]:
                 line = yield
                 msg += "\n" + line["msg"]
-        line = yield prio, msg
+        line = yield timestamp, prio, msg
 
 
 def self_starting(g):
@@ -99,24 +100,20 @@ def defaultdict_selector(feed):
     return map_fst(defaultdict(self_starting(zlog_assembler)).get, feed)
 
 
-def bsim_parallel_devices(lines):
-    devs = defaultdict(self_starting(zlog_assembler))
-    for line in lines:
-        time_us, devnum, msg = line
+def bsim_parallel_devices(next_assembler, bsim_log):
+    devs = defaultdict(self_starting(next_assembler))
+    for time, dev_id, msg in bsim_log:
 
         # Reassemble only if the log is from a device. 'None'
         # messages where not prefixed with 'd_XX: ', and come
         # from other sources like the run-script that started
         # the simulation. We still want to show them in the log
         # as-is, but we don't parse them in any way.
-        if devnum is not None:
-            msg = devs[devnum].send(zlog_msg_match(msg))
-        else:
-            msg = (None, msg)
+        msg = devs[dev_id].send(msg)
 
         # Yield the reassembled message if it is ready.
         if msg is not None:
-            yield time_us, devnum, msg
+            yield time, dev_id, msg
 
 
 zlog_pri_to_syslog = {
@@ -187,6 +184,8 @@ def output_h4(pcap: PcapngOutput, dev: str, time_us: int, data: bytes):
         data,
     )
 
+def map_bsim(f, bsim_log):
+    return ((t, d, f(m)) for (t, d, m) in bsim_log)
 
 def main(args):
     pcap = PcapngOutput(args.output)
@@ -194,13 +193,16 @@ def main(args):
     output = args.input
     output = (line.rstrip("\n") for line in output)
     output = (parse_bsim_line(line) for line in output)
-    output = bsim_parallel_devices(output)
+    output = map_bsim(zlog_msg_match, output)
+    output = bsim_parallel_devices(zlog_assembler, output)
 
     prev_time = epoch
     for line in output:
         if not line:
             continue
-        time, devnum, (prio, msg) = line
+        bstime, devnum, (ztime, prio, msg) = line
+        time = bstime
+        _ = ztime
         if time is None:
             time = prev_time
         prev_time = time

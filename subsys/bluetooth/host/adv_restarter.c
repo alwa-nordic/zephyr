@@ -1,4 +1,4 @@
-#include "zephyr/sys/__assert.h"
+#include <zephyr/sys/__assert.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
@@ -65,7 +65,7 @@ int bt_adv_restarter_start(const struct bt_le_adv_param *param, const struct bt_
 	err = serialize_data_arr(ad, ad_len, copy_ad_serialized, sizeof(copy_ad_serialized));
 	if (err) {
 		__ASSERT_NO_MSG(err = -EFBIG);
-		LOG_ERR("Adv data too large for legacy adv");
+		LOG_ERR("Adv too big");
 		return -EFBIG;
 	}
 	copy_ad_len = ad_len;
@@ -73,7 +73,7 @@ int bt_adv_restarter_start(const struct bt_le_adv_param *param, const struct bt_
 	err = serialize_data_arr(sd, sd_len, copy_sd_serialized, sizeof(copy_sd_serialized));
 	if (err) {
 		__ASSERT_NO_MSG(err = -EFBIG);
-		LOG_ERR("Scan response data too large for legacy adv");
+		LOG_ERR("Scan response too big");
 		return -EFBIG;
 	}
 	copy_sd_len = sd_len;
@@ -115,18 +115,45 @@ int try_restart(void)
 	case -ENOMEM:
 	case -ECONNREFUSED:
 		/* Retry later */
-		break;
+		return 0;
 	default:
-		LOG_ERR("Failed to restart advertising (err %d)", err);
+		return err;
 	}
+}
 
-	return err;
+static void _count_peripheral_loop(struct bt_conn *conn, void *count_)
+{
+	struct bt_conn_info conn_info;
+	size_t *count = count_;
+
+	bt_conn_get_info(conn, &conn_info);
+
+	if (conn_info.role == BT_CONN_ROLE_PERIPHERAL) {
+		(*count)++;
+	}
+}
+
+static size_t conn_count_peripheral(void)
+{
+	size_t count = 0;
+
+	bt_conn_foreach(BT_CONN_TYPE_LE, _count_peripheral_loop, &count);
+
+	return count;
 }
 
 void on_recycled(void)
 {
-	if (govenor_max_periperals) {
-		try_restart();
+	int err;
+	uint8_t count;
+
+	count = conn_count_peripheral();
+
+	if (count < govenor_max_periperals) {
+		err = try_restart();
+		if (err) {
+			LOG_ERR("Failed to restart advertising (err %d)", err);
+		}
 	}
 }
 

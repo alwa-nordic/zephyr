@@ -12,8 +12,13 @@ LOG_MODULE_REGISTER(adv_restarter, LOG_LEVEL_DBG);
 #define LEGACY_ADV_DATA_MAX_LEN      0x1f
 #define LEGACY_SCAN_RSP_DATA_MAX_LEN 0x1f
 
-/* Initialized to zero to disable. */
-uint8_t govenor_max_periperals;
+static void restart_work_handler(struct k_work *work);
+struct k_work restart_work = {.handler = restart_work_handler};
+
+static K_MUTEX_DEFINE(globals_lock);
+
+/* Initialized to zero, which means restarting is disabled. */
+uint8_t restart_govenor_max_periperals;
 
 /* Storage for deep copy of adverising parameters. */
 bt_addr_le_t param_dir_adv_peer;
@@ -49,38 +54,109 @@ static int serialize_data_arr(const struct bt_data *ad, size_t ad_count, uint8_t
 	return 0;
 }
 
-int bt_adv_restarter_start(const struct bt_le_adv_param *param, const struct bt_data *ad,
-			   size_t ad_len, const struct bt_data *sd, size_t sd_len)
+static bool ad_is_limited(const struct bt_data *ad, size_t ad_len)
+{
+	size_t i;
+
+	for (i = 0; i < ad_len; i++) {
+		if (ad[i].type == BT_DATA_FLAGS && ad[i].data_len == sizeof(uint8_t) &&
+		    ad[i].data != NULL) {
+			if (ad[i].data[0] & BT_LE_AD_LIMITED) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+static int bt_adv_restarter_start_unsafe(uint8_t peripherals_limit,
+					 const struct bt_le_adv_param *param,
+					 const struct bt_data *ad, size_t ad_len,
+					 const struct bt_data *sd, size_t sd_len)
 {
 	int err;
 
+	k_mutex_lock(&globals_lock, K_FOREVER);
+
+	/* Invoking `bt_le_adv_start` here serves to check the
+	 * input parameters.
+	 */
+	err = bt_le_adv_start(param, ad, ad_len, sd, sd_len);
+	if (err) {
+		goto exit;
+	}
+
+	restart_govenor_max_periperals = peripherals_limit;
+
+	deep_copy_params(param);
+
+	copy_ad_len = ad_len;
+	err = serialize_data_arr(ad, ad_len, copy_ad_serialized, sizeof(copy_ad_serialized));
+	__ASSERT_NO_MSG(!err);
+
+	copy_sd_len = sd_len;
+	err = serialize_data_arr(sd, sd_len, copy_sd_serialized, sizeof(copy_sd_serialized));
+	__ASSERT_NO_MSG(!err);
+
+exit:
+	k_mutex_unlock(&globals_lock);
+	return err;
+}
+
+int bt_adv_restarter_start(uint8_t peripherals_limit, const struct bt_le_adv_param *param,
+			   const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,
+			   size_t sd_len)
+{
 	if (!param) {
 		return -EINVAL;
 	}
 
-	if (!(param->options & BT_LE_ADV_OPT_ONE_TIME)) {
-		return -EINVAL;
+	if (param->options & BT_LE_ADV_OPT_ONE_TIME) {
+		return bt_le_adv_start(param, ad, ad_len, sd, sd_len);
 	}
 
-	err = serialize_data_arr(ad, ad_len, copy_ad_serialized, sizeof(copy_ad_serialized));
-	if (err) {
-		__ASSERT_NO_MSG(err = -EFBIG);
-		LOG_ERR("Adv too big");
-		return -EFBIG;
+	if (ad_is_limited(ad, ad_len)) {
+		/* Limited and restarted combination is not supported. */
+		return -ENOSYS;
 	}
+
+	return bt_adv_restarter_start_unsafe(peripherals_limit, param, ad, ad_len, sd, sd_len);
+}
+
+int bt_adv_restarter_update_data(const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,
+				 size_t sd_len)
+{
+	int err;
+
+	k_mutex_lock(&globals_lock, K_FOREVER);
+	err = bt_le_adv_update_data(ad, ad_len, sd, sd_len);
+	if (err) {
+		goto exit;
+	}
+
 	copy_ad_len = ad_len;
+	err = serialize_data_arr(ad, ad_len, copy_ad_serialized, sizeof(copy_ad_serialized));
+	__ASSERT_NO_MSG(!err);
 
-	err = serialize_data_arr(sd, sd_len, copy_sd_serialized, sizeof(copy_sd_serialized));
-	if (err) {
-		__ASSERT_NO_MSG(err = -EFBIG);
-		LOG_ERR("Scan response too big");
-		return -EFBIG;
-	}
 	copy_sd_len = sd_len;
+	err = serialize_data_arr(sd, sd_len, copy_sd_serialized, sizeof(copy_sd_serialized));
+	__ASSERT_NO_MSG(!err);
 
-	deep_copy_params(param);
+exit:
+	k_mutex_unlock(&globals_lock);
+	return err;
+}
 
-	err = bt_le_adv_start(param, ad, ad_len, sd, sd_len);
+int bt_adv_restarter_stop(void)
+{
+	int err;
+
+	k_mutex_lock(&globals_lock, K_FOREVER);
+	restart_govenor_max_periperals = 0;
+	err = bt_le_adv_stop();
+	k_mutex_unlock(&globals_lock);
+
 	return err;
 }
 
@@ -89,7 +165,7 @@ int bt_adv_restarter_start(const struct bt_le_adv_param *param, const struct bt_
  *  @note The resulting entries in the bt_data memory borrow
  *  from the input ad_struct.
  */
-void bt_data_parse_into(struct bt_data *bt_data, size_t bt_data_count, uint8_t *ad_struct)
+static void bt_data_parse_into(struct bt_data *bt_data, size_t bt_data_count, uint8_t *ad_struct)
 {
 	size_t pos = 0;
 	for (size_t i = 0; i < copy_ad_len; i++) {
@@ -100,9 +176,22 @@ void bt_data_parse_into(struct bt_data *bt_data, size_t bt_data_count, uint8_t *
 	}
 }
 
-int try_restart(void)
+static int try_restart_ignore_oom(void)
 {
 	int err;
+
+	/* Zephyr Bluetooth stack does not ingest the serialized
+	 * AD format, but requires an array of `bt_data` with
+	 * pointers.
+	 *
+	 * Worst case, the array length here is 15. Sizeof
+	 * `bt_data` is 8. That's 120 bytes of stack space here.
+	 * Please download more RAM before using Zephyr
+	 * Bluetooth.
+	 *
+	 * This is in addtion the the actual storage of the
+	 * data, which is the expected 62 bytes of static RAM.
+	 */
 	struct bt_data ad[copy_ad_len];
 	struct bt_data sd[copy_sd_len];
 
@@ -128,12 +217,14 @@ static void _count_peripheral_loop(struct bt_conn *conn, void *count_)
 
 	bt_conn_get_info(conn, &conn_info);
 
+	/* Note that advertisers register as 'central'.
+	 */
 	if (conn_info.role == BT_CONN_ROLE_PERIPHERAL) {
 		(*count)++;
 	}
 }
 
-static size_t conn_count_peripheral(void)
+static size_t count_conn_marked_peripheral(void)
 {
 	size_t count = 0;
 
@@ -142,21 +233,35 @@ static size_t conn_count_peripheral(void)
 	return count;
 }
 
-void on_recycled(void)
+static bool should_restart(void)
+{
+	uint8_t peripheral_count;
+
+	peripheral_count = count_conn_marked_peripheral();
+	return peripheral_count < restart_govenor_max_periperals;
+}
+
+static void restart_work_handler(struct k_work *work)
 {
 	int err;
-	uint8_t count;
 
-	count = conn_count_peripheral();
+	k_mutex_lock(&globals_lock, K_FOREVER);
 
-	if (count < govenor_max_periperals) {
-		err = try_restart();
+	if (should_restart()) {
+		err = try_restart_ignore_oom();
 		if (err) {
 			LOG_ERR("Failed to restart advertising (err %d)", err);
 		}
 	}
+
+	k_mutex_unlock(&globals_lock);
+}
+
+static void on_conn_recycled(void)
+{
+	k_work_submit(&restart_work);
 }
 
 BT_CONN_CB_DEFINE(conn_cb) = {
-	.recycled = on_recycled,
+	.recycled = on_conn_recycled,
 };

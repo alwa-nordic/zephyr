@@ -117,7 +117,11 @@ int bt_adv_restarter_start(uint8_t peripherals_limit, const struct bt_le_adv_par
 	}
 
 	if (ad_is_limited(ad, ad_len)) {
-		/* Limited and restarted combination is not supported. */
+		/* Limited and restarted combination is not
+		 * supported yet. We would need to move the
+		 * timer out of the stack to be notified of the
+		 * timeout.
+		 */
 		return -ENOSYS;
 	}
 
@@ -130,6 +134,7 @@ int bt_adv_restarter_update_data(const struct bt_data *ad, size_t ad_len, const 
 	int err;
 
 	k_mutex_lock(&globals_lock, K_FOREVER);
+
 	err = bt_le_adv_update_data(ad, ad_len, sd, sd_len);
 	if (err) {
 		goto exit;
@@ -153,8 +158,11 @@ int bt_adv_restarter_stop(void)
 	int err;
 
 	k_mutex_lock(&globals_lock, K_FOREVER);
+
 	restart_govenor_max_periperals = 0;
+
 	err = bt_le_adv_stop();
+
 	k_mutex_unlock(&globals_lock);
 
 	return err;
@@ -212,8 +220,8 @@ static int try_restart_ignore_oom(void)
 
 static void _count_peripheral_loop(struct bt_conn *conn, void *count_)
 {
-	struct bt_conn_info conn_info;
 	size_t *count = count_;
+	struct bt_conn_info conn_info;
 
 	bt_conn_get_info(conn, &conn_info);
 
@@ -241,11 +249,23 @@ static bool should_restart(void)
 	return peripheral_count < restart_govenor_max_periperals;
 }
 
-static void restart_work_handler(struct k_work *work)
+static void restart_work_handler(struct k_work *self)
 {
 	int err;
 
-	k_mutex_lock(&globals_lock, K_FOREVER);
+	/* The timeout is defence-in-depth. The lock has a
+	 * dependency the blocking Bluetooth API. This can form
+	 * a deadlock if the Bluetooth API has a dependency on
+	 * the work queue.
+	 */
+	err = k_mutex_lock(&globals_lock, K_MSEC(100));
+	if (err) {
+		LOG_DBG("reshed");
+		k_work_submit(self);
+
+		/* We did not get the lock. */
+		return;
+	}
 
 	if (should_restart()) {
 		err = try_restart_ignore_oom();

@@ -79,6 +79,14 @@ BUILD_ASSERT(IN_RANGE(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, -(CONFIG_BT_MAX_C
 
 #define MAX_PERIPHERALS MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN + 1))
 
+#if 0
+		k_work_reschedule(&adv->lim_adv_timeout_work,
+				  K_SECONDS(CONFIG_BT_LIM_ADV_TIMEOUT));
+
+sys_timepoint_calc(K_SECONDS(CONFIG_BT_LIM_ADV_TIMEOUT))
+static inline bool sys_timepoint_expired(k_timepoint_t timepoint)
+#endif
+
 static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 					 const struct bt_data *ad, size_t ad_len,
 					 const struct bt_data *sd, size_t sd_len)
@@ -127,10 +135,17 @@ int bt_le_adv_start2(const struct bt_le_adv_param *param, const struct bt_data *
 	}
 
 	if ((param->options & BT_LE_ADV_OPT_ONE_TIME) && ad_is_limited(ad, ad_len)) {
-		/* Limited and restarted combination is not
-		 * supported yet. We would need to move the
-		 * timer out of the stack to be notified of the
-		 * timeout.
+		/* Limited and restarted combination is not supported.
+		 *
+		 * 'Limited' means the advertisement is triggered by the
+		 * user and and will be available for at most 180
+		 * seconds.
+		 *
+		 * The host will automatically stop limited advertisers.
+		 *
+		 * It could be sensible to restart the advertisement in
+		 * case a device connects just to e.g. read the GAP
+		 * name. In this case, it
 		 */
 		return -ENOSYS;
 	}

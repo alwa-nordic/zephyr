@@ -282,6 +282,17 @@ config BT_FILTER_ACCEPT_LIST
 	  advertising reports.
 	  Connections can be established automatically for accepted peers.
 
+config BT_ADV_RESTARTER_MAX_PERIPHERALS
+	int "Legacy advertiser: Target peripheral count"
+	default -1
+	help
+	  The legacy advertiser will by default restart advertising
+	  until the number of peripheral connections reaches this value.
+
+	  Use zero to disable limit.
+
+	  Use a negative value to subtract from BT_MAX_CONN.
+
 config BT_LIM_ADV_TIMEOUT
 	int "Timeout for limited advertising in 1s units"
 	default 30

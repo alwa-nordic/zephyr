@@ -12,6 +12,8 @@ LOG_MODULE_REGISTER(adv_restarter, LOG_LEVEL_DBG);
 #define LEGACY_ADV_DATA_MAX_LEN      0x1f
 #define LEGACY_SCAN_RSP_DATA_MAX_LEN 0x1f
 
+#define MOD(a, b) (((a) % (b) + (b)) % (b))
+
 static void restart_work_handler(struct k_work *work);
 struct k_work restart_work = {.handler = restart_work_handler};
 
@@ -70,8 +72,13 @@ static bool ad_is_limited(const struct bt_data *ad, size_t ad_len)
 	return false;
 }
 
-static int bt_adv_restarter_start_unsafe(uint8_t peripherals_limit,
-					 const struct bt_le_adv_param *param,
+BUILD_ASSERT(IN_RANGE(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, -(CONFIG_BT_MAX_CONN - 1),
+		      CONFIG_BT_MAX_CONN),
+	     "Invalid value " STRINGIFY(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS));
+
+#define MAX_PERIPHERALS MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN+1))
+
+static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 					 const struct bt_data *ad, size_t ad_len,
 					 const struct bt_data *sd, size_t sd_len)
 {
@@ -87,7 +94,7 @@ static int bt_adv_restarter_start_unsafe(uint8_t peripherals_limit,
 		goto exit;
 	}
 
-	restart_govenor_max_periperals = peripherals_limit;
+	restart_govenor_max_periperals = CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS;
 
 	deep_copy_params(param);
 
@@ -194,8 +201,8 @@ static int try_restart_ignore_oom(void)
 	 *
 	 * Worst case, the array length here is 15. Sizeof
 	 * `bt_data` is 8. That's 120 bytes of stack space here.
-	 * Please download more RAM before using Zephyr
-	 * Bluetooth.
+	 * Please ensure you have enough RAM for this on the
+	 * work queue.
 	 *
 	 * This is in addtion the the actual storage of the
 	 * data, which is the expected 62 bytes of static RAM.

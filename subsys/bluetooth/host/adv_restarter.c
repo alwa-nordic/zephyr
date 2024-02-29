@@ -1,3 +1,4 @@
+#include "zephyr/kernel.h"
 #include <zephyr/sys/__assert.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -76,7 +77,7 @@ BUILD_ASSERT(IN_RANGE(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, -(CONFIG_BT_MAX_C
 		      CONFIG_BT_MAX_CONN),
 	     "Invalid value " STRINGIFY(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS));
 
-#define MAX_PERIPHERALS MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN+1))
+#define MAX_PERIPHERALS MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN + 1))
 
 static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 					 const struct bt_data *ad, size_t ad_len,
@@ -96,6 +97,13 @@ static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 
 	restart_govenor_max_periperals = CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS;
 
+	if (param->options & BT_LE_ADV_OPT_ONE_TIME) {
+		/* Disable restarting. */
+		restart_govenor_max_periperals = 0;
+		/* Optimisation: Skip copying. */
+		goto exit;
+	}
+
 	deep_copy_params(param);
 
 	copy_ad_len = ad_len;
@@ -111,19 +119,14 @@ exit:
 	return err;
 }
 
-int bt_adv_restarter_start(uint8_t peripherals_limit, const struct bt_le_adv_param *param,
-			   const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,
-			   size_t sd_len)
+int bt_le_adv_start2(const struct bt_le_adv_param *param, const struct bt_data *ad, size_t ad_len,
+		     const struct bt_data *sd, size_t sd_len)
 {
 	if (!param) {
 		return -EINVAL;
 	}
 
-	if (param->options & BT_LE_ADV_OPT_ONE_TIME) {
-		return bt_le_adv_start(param, ad, ad_len, sd, sd_len);
-	}
-
-	if (ad_is_limited(ad, ad_len)) {
+	if ((param->options & BT_LE_ADV_OPT_ONE_TIME) && ad_is_limited(ad, ad_len)) {
 		/* Limited and restarted combination is not
 		 * supported yet. We would need to move the
 		 * timer out of the stack to be notified of the
@@ -132,7 +135,7 @@ int bt_adv_restarter_start(uint8_t peripherals_limit, const struct bt_le_adv_par
 		return -ENOSYS;
 	}
 
-	return bt_adv_restarter_start_unsafe(peripherals_limit, param, ad, ad_len, sd, sd_len);
+	return bt_adv_restarter_start_unsafe(param, ad, ad_len, sd, sd_len);
 }
 
 int bt_adv_restarter_update_data(const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,

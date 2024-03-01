@@ -21,7 +21,7 @@ struct k_work restart_work = {.handler = restart_work_handler};
 static K_MUTEX_DEFINE(globals_lock);
 
 /* Initialized to zero, which means restarting is disabled. */
-uint8_t restart_govenor_max_periperals;
+uint8_t target_peripheral_count;
 
 /* Storage for deep copy of adverising parameters. */
 bt_addr_le_t param_dir_adv_peer;
@@ -103,11 +103,11 @@ static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 		goto exit;
 	}
 
-	restart_govenor_max_periperals = CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS;
+	target_peripheral_count = CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS;
 
 	if (param->options & BT_LE_ADV_OPT_ONE_TIME) {
 		/* Disable restarting. */
-		restart_govenor_max_periperals = 0;
+		target_peripheral_count = 0;
 		/* Optimisation: Skip copying. */
 		goto exit;
 	}
@@ -134,18 +134,22 @@ int bt_le_adv_start2(const struct bt_le_adv_param *param, const struct bt_data *
 		return -EINVAL;
 	}
 
-	if ((param->options & BT_LE_ADV_OPT_ONE_TIME) && ad_is_limited(ad, ad_len)) {
+	if (!(param->options & BT_LE_ADV_OPT_ONE_TIME) && ad_is_limited(ad, ad_len)) {
 		/* Limited and restarted combination is not supported.
 		 *
-		 * 'Limited' means the advertisement is triggered by the
-		 * user and and will be available for at most 180
-		 * seconds.
+		 * Even though the host API does mark this as an error, it is
+		 * not appropriate.
 		 *
-		 * The host will automatically stop limited advertisers.
+		 * The host interprets the presence of the 'limited' flag in the
+		 * advertisement data as an instruction to perform the GAP
+		 * Limited Discoverable mode.
 		 *
-		 * It could be sensible to restart the advertisement in
-		 * case a device connects just to e.g. read the GAP
-		 * name. In this case, it
+		 * The GAP following procedure specification implies that the
+		 * mode ends when a connection is established.
+		 *
+		 * Core 5.4 3 C 9.2.3
+		 *   > The device shall remain in limited discoverable mode
+		 *   > until a connection is established [...].
 		 */
 		return -ENOSYS;
 	}
@@ -153,8 +157,8 @@ int bt_le_adv_start2(const struct bt_le_adv_param *param, const struct bt_data *
 	return bt_adv_restarter_start_unsafe(param, ad, ad_len, sd, sd_len);
 }
 
-int bt_adv_restarter_update_data(const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,
-				 size_t sd_len)
+int bt_le_adv_update_data2(const struct bt_data *ad, size_t ad_len, const struct bt_data *sd,
+			   size_t sd_len)
 {
 	int err;
 
@@ -162,6 +166,10 @@ int bt_adv_restarter_update_data(const struct bt_data *ad, size_t ad_len, const 
 
 	err = bt_le_adv_update_data(ad, ad_len, sd, sd_len);
 	if (err) {
+		goto exit;
+	}
+
+	if (!target_peripheral_count) {
 		goto exit;
 	}
 
@@ -178,13 +186,13 @@ exit:
 	return err;
 }
 
-int bt_adv_restarter_stop(void)
+int bt_le_adv_stop2(void)
 {
 	int err;
 
 	k_mutex_lock(&globals_lock, K_FOREVER);
 
-	restart_govenor_max_periperals = 0;
+	target_peripheral_count = 0;
 
 	err = bt_le_adv_stop();
 
@@ -213,17 +221,15 @@ static int try_restart_ignore_oom(void)
 {
 	int err;
 
-	/* Zephyr Bluetooth stack does not ingest the serialized
-	 * AD format, but requires an array of `bt_data` with
-	 * pointers.
+	/* Zephyr Bluetooth stack does not ingest the serialized AD
+	 * format, but requires an array of `bt_data` with pointers.
 	 *
-	 * Worst case, the array length here is 15. Sizeof
-	 * `bt_data` is 8. That's 120 bytes of stack space here.
-	 * Please ensure you have enough RAM for this on the
-	 * work queue.
+	 * Worst case, the array length here is 15. Sizeof `bt_data` is
+	 * 8. That's 120 bytes of stack space here. Please ensure you
+	 * have enough stack space for this on the work queue.
 	 *
-	 * This is in addtion the the actual storage of the
-	 * data, which is the expected 62 bytes of static RAM.
+	 * This is in addtion the the actual storage of the data, which
+	 * is the expected 62 bytes of static RAM.
 	 */
 	struct bt_data ad[copy_ad_len];
 	struct bt_data sd[copy_sd_len];
@@ -234,8 +240,9 @@ static int try_restart_ignore_oom(void)
 	err = bt_le_adv_start(&param_copy, ad, copy_ad_len, sd, copy_sd_len);
 
 	switch (err) {
-	case -ENOMEM:
+	case -EALREADY:
 	case -ECONNREFUSED:
+	case -ENOMEM:
 		/* Retry later */
 		return 0;
 	default:
@@ -243,15 +250,13 @@ static int try_restart_ignore_oom(void)
 	}
 }
 
-static void _count_peripheral_loop(struct bt_conn *conn, void *count_)
+static void _count_conn_marked_peripheral_loop(struct bt_conn *conn, void *count_)
 {
 	size_t *count = count_;
 	struct bt_conn_info conn_info;
 
 	bt_conn_get_info(conn, &conn_info);
 
-	/* Note that advertisers register as 'central'.
-	 */
 	if (conn_info.role == BT_CONN_ROLE_PERIPHERAL) {
 		(*count)++;
 	}
@@ -261,7 +266,7 @@ static size_t count_conn_marked_peripheral(void)
 {
 	size_t count = 0;
 
-	bt_conn_foreach(BT_CONN_TYPE_LE, _count_peripheral_loop, &count);
+	bt_conn_foreach(BT_CONN_TYPE_LE, _count_conn_marked_peripheral_loop, &count);
 
 	return count;
 }
@@ -271,17 +276,17 @@ static bool should_restart(void)
 	uint8_t peripheral_count;
 
 	peripheral_count = count_conn_marked_peripheral();
-	return peripheral_count < restart_govenor_max_periperals;
+
+	return peripheral_count < target_peripheral_count;
 }
 
 static void restart_work_handler(struct k_work *self)
 {
 	int err;
 
-	/* The timeout is defence-in-depth. The lock has a
-	 * dependency the blocking Bluetooth API. This can form
-	 * a deadlock if the Bluetooth API has a dependency on
-	 * the work queue.
+	/* The timeout is defence-in-depth. The lock has a dependency
+	 * the blocking Bluetooth API. This can form a deadlock if the
+	 * Bluetooth API happens to have a dependency on the work queue.
 	 */
 	err = k_mutex_lock(&globals_lock, K_MSEC(100));
 	if (err) {
@@ -307,6 +312,15 @@ static void on_conn_recycled(void)
 	k_work_submit(&restart_work);
 }
 
+/* There is no event for advertiser termination. But we can use
+ * the 'connected' event as a proxy.
+ */
+static void on_conn_connected(struct bt_conn *conn, uint8_t err)
+{
+	k_work_submit(&restart_work);
+}
+
 BT_CONN_CB_DEFINE(conn_cb) = {
+	.connected = on_conn_connected,
 	.recycled = on_conn_recycled,
 };

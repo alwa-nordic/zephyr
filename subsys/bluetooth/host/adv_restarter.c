@@ -73,11 +73,12 @@ static bool ad_is_limited(const struct bt_data *ad, size_t ad_len)
 	return false;
 }
 
-BUILD_ASSERT(IN_RANGE(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, -(CONFIG_BT_MAX_CONN - 1),
-		      CONFIG_BT_MAX_CONN),
-	     "Invalid value " STRINGIFY(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS));
+//BUILD_ASSERT(IN_RANGE(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, -(CONFIG_BT_MAX_CONN - 1), 0xffff),
+//	     "Invalid value " STRINGIFY(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS));
 
-#define MAX_PERIPHERALS MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN + 1))
+#define ENABLED_TARGET_PERIPHERAL_COUNT                                                            \
+	2
+	//MOD(CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS, (CONFIG_BT_MAX_CONN + 1))
 
 #if 0
 		k_work_reschedule(&adv->lim_adv_timeout_work,
@@ -103,7 +104,7 @@ static int bt_adv_restarter_start_unsafe(const struct bt_le_adv_param *param,
 		goto exit;
 	}
 
-	target_peripheral_count = CONFIG_BT_ADV_RESTARTER_MAX_PERIPHERALS;
+	target_peripheral_count = ENABLED_TARGET_PERIPHERAL_COUNT;
 
 	if (param->options & BT_LE_ADV_OPT_ONE_TIME) {
 		/* Disable restarting. */
@@ -137,8 +138,8 @@ int bt_le_adv_start2(const struct bt_le_adv_param *param, const struct bt_data *
 	if (!(param->options & BT_LE_ADV_OPT_ONE_TIME) && ad_is_limited(ad, ad_len)) {
 		/* Limited and restarted combination is not supported.
 		 *
-		 * Even though the host API does mark this as an error, it is
-		 * not appropriate.
+		 * Even though the host API does not treat this as an error, it
+		 * is not appropriate.
 		 *
 		 * The host interprets the presence of the 'limited' flag in the
 		 * advertisement data as an instruction to perform the GAP

@@ -306,6 +306,40 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 	return 0;
 }
 
+int bt_hci_cmd_send_sync_nocheck(uint16_t opcode, struct net_buf *buf, struct net_buf **rsp)
+{
+	struct k_sem sync_sem;
+	int err;
+
+	if (!buf) {
+		buf = bt_hci_cmd_create(opcode, 0);
+		if (!buf) {
+			return -ENOBUFS;
+		}
+	}
+
+	LOG_DBG("buf %p opcode 0x%04x len %u", buf, opcode, buf->len);
+
+	k_sem_init(&sync_sem, 0, 1);
+	cmd(buf)->sync = &sync_sem;
+
+	net_buf_put(&bt_dev.cmd_tx_queue, net_buf_ref(buf));
+
+	err = k_sem_take(&sync_sem, HCI_CMD_TIMEOUT);
+	BT_ASSERT_MSG(err == 0, "command opcode 0x%04x timeout with err %d", opcode, err);
+
+	LOG_DBG("rsp %p opcode 0x%04x status 0x%02x len %u", buf, opcode, cmd(buf)->status,
+		buf->len);
+
+	if (rsp) {
+		*rsp = buf;
+	} else {
+		net_buf_unref(buf);
+	}
+
+	return 0;
+}
+
 int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp)
 {

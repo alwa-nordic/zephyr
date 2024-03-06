@@ -79,6 +79,14 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf);
 int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp);
 
+/** Like @ref bt_hci_cmd_send_sync, but won't fail if the
+ * response has a non-zero status.
+ *
+ * It's up to the caller to check the status in the response
+ * buffer.
+ */
+int bt_hci_cmd_send_sync_nocheck(uint16_t opcode, struct net_buf *buf, struct net_buf **rsp);
+
 /** @brief Get connection handle for a connection.
  *
  * @param conn Connection object.

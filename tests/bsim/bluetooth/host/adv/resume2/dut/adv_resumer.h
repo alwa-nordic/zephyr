@@ -2,7 +2,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-typedef void adv_starter_t(void);
+#include <stdbool.h>
+#include <zephyr/sys/util.h>
+
+typedef void bt_conn_evt_sub_t(void);
+
+enum bt_conn_evt_bits {
+	BT_NOW = BIT(0),
+	BT_CONNECTED = BIT(1),
+	BT_RECYCLED = BIT(2),
+};
 
 /**
  * @brief Start or stop advertising with resumption.
@@ -15,12 +24,9 @@ typedef void adv_starter_t(void);
  * adv_starter provided will not invoked, and it is safe to
  * modify global variabled accessed by @c adv_starter.
  *
- * When @p adv_starter is `NULL`, this function calls
- * `bt_le_adv_stop`.
- *
  * @param adv_starter Function to invoke when it might be
  * possible to start an advertiser. Set to `NULL` to disable.
  *
  * This function is always successful.
  */
-void adv_resumer_set(adv_starter_t *adv_starter);
+void bt_conn_evt_sub_set(bt_conn_evt_sub_t *func, enum bt_conn_evt_bits enabled);

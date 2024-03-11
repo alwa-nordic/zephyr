@@ -17,31 +17,35 @@
 
 #include "adv_resumer.h"
 
-LOG_MODULE_REGISTER(adv_resumer, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(bt_conn_evt_sub, LOG_LEVEL_INF);
 
-static void resume_work_handler(struct k_work *work);
-static struct k_work resume_work = {.handler = resume_work_handler};
+static void handler(struct k_work *work);
+static struct k_work work = {.handler = handler};
 
 static K_MUTEX_DEFINE(sync);
 
 /* Initialized to NULL, which means restarting is disabled. */
-static adv_starter_t *adv_starter;
+static bt_conn_evt_sub_t *g_func;
+static enum bt_conn_evt_bits g_enabled;
 
-void adv_resumer_set(adv_starter_t *new_adv_starter)
+void bt_conn_evt_sub_set(bt_conn_evt_sub_t *func, enum bt_conn_evt_bits enabled)
 {
 	k_mutex_lock(&sync, K_FOREVER);
 
-	adv_starter = new_adv_starter;
-	if (adv_starter) {
-		k_work_submit(&resume_work);
-	}
+	g_func = func;
+	g_enabled = enabled;
 
 	k_mutex_unlock(&sync);
+
+	if (func && (enabled & BT_NOW)) {
+		k_work_submit(&work);
+	}
 }
 
-static void resume_work_handler(struct k_work *self)
+static void handler(struct k_work *self)
 {
 	int err;
+	//bt_conn_evt_sub_set(NULL, BT_CONNECTED | BT_RECYCLED);
 
 	/* The timeout is defence-in-depth. The lock has a dependency
 	 * the blocking Bluetooth API. This can form a deadlock if the
@@ -59,8 +63,8 @@ static void resume_work_handler(struct k_work *self)
 		return;
 	}
 
-	if (adv_starter) {
-		adv_starter();
+	if (g_func) {
+		g_func();
 	}
 
 	k_mutex_unlock(&sync);
@@ -68,8 +72,7 @@ static void resume_work_handler(struct k_work *self)
 
 static void on_conn_connected(struct bt_conn *conn, uint8_t conn_err)
 {
-	/* In case this connection terminated the advertiser. */
-	k_work_submit(&resume_work);
+	k_work_submit(&work);
 }
 
 static void on_conn_recycled(void)
@@ -77,7 +80,7 @@ static void on_conn_recycled(void)
 	/* In case we could not start the advertiser earlier due
 	 * to lack of connection objects.
 	 */
-	k_work_submit(&resume_work);
+	k_work_submit(&work);
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {

@@ -84,7 +84,7 @@ int main(void)
 
 	/* Try to fill the connection slots. */
 	target_peripheral_count = CONFIG_BT_MAX_CONN;
-	adv_resumer_set(my_adv_start);
+	bt_conn_evt_sub_set(my_adv_start);
 
 	LOG_INF("Waiting for connections...");
 	while (atomic_get(&connected_count) < CONFIG_BT_MAX_CONN) {
@@ -94,7 +94,7 @@ int main(void)
 	LOG_INF("✅ Ok");
 	LOG_INF("🧹 Clean up");
 
-	adv_resumer_set(NULL);
+	bt_conn_evt_sub_set(NULL);
 	bt_le_adv_stop();
 
 	bt_conn_foreach(BT_CONN_TYPE_LE, disconnect, NULL);
@@ -123,7 +123,7 @@ int main(void)
 
 	/* Try to limit the fill. */
 	target_peripheral_count = CONFIG_BT_MAX_CONN - 1;
-	adv_resumer_set(my_adv_start);
+	bt_conn_evt_sub_set(my_adv_start);
 	__ASSERT_NO_MSG(!err);
 
 	LOG_INF("Waiting for connections...");

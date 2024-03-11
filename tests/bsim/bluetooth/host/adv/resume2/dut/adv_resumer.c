@@ -31,10 +31,8 @@ static enum bt_conn_evt_bits g_enabled;
 void bt_conn_evt_sub_set(bt_conn_evt_sub_t *func, enum bt_conn_evt_bits enabled)
 {
 	k_mutex_lock(&sync, K_FOREVER);
-
 	g_func = func;
 	g_enabled = enabled;
-
 	k_mutex_unlock(&sync);
 
 	if (func && (enabled & BT_NOW)) {
@@ -70,21 +68,42 @@ static void handler(struct k_work *self)
 	k_mutex_unlock(&sync);
 }
 
+static void trigger(enum bt_conn_evt_bits evt) {
+
+	bt_conn_evt_sub_t *func;
+	enum bt_conn_evt_bits enabled;
+
+	k_mutex_lock(&sync, K_FOREVER);
+	func = g_func;
+	enabled = g_enabled;
+	k_mutex_unlock(&sync);
+
+	if (func && (enabled & trigger)) {
+		k_work_submit(&work);
+	}
+}
+
 static void on_conn_connected(struct bt_conn *conn, uint8_t conn_err)
 {
-	k_work_submit(&work);
+
 }
 
 static void on_conn_recycled(void)
 {
-	/* In case we could not start the advertiser earlier due
-	 * to lack of connection objects.
-	 */
-	k_work_submit(&work);
+	bt_conn_evt_sub_t *func;
+	enum bt_conn_evt_bits enabled;
+
+	k_mutex_lock(&sync, K_FOREVER);
+	func = g_func;
+	enabled = g_enabled;
+	k_mutex_unlock(&sync);
+
+	if (func && (enabled & BT_RECYCLED)) {
+		k_work_submit(&work);
+	}
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
-	/* Proxy for 'advertiser recycled' */
 	.connected = on_conn_connected,
 	.recycled = on_conn_recycled,
 };

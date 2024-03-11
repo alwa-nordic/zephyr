@@ -95,6 +95,7 @@ int main(void)
 	LOG_INF("🧹 Clean up");
 
 	adv_resumer_set(NULL);
+	bt_le_adv_stop();
 
 	bt_conn_foreach(BT_CONN_TYPE_LE, disconnect, NULL);
 

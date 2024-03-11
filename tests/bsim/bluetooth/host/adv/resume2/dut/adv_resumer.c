@@ -34,8 +34,6 @@ void adv_resumer_set(adv_starter_t *new_adv_starter)
 	adv_starter = new_adv_starter;
 	if (adv_starter) {
 		k_work_submit(&resume_work);
-	} else {
-		bt_le_adv_stop();
 	}
 
 	k_mutex_unlock(&sync);
@@ -83,6 +81,7 @@ static void on_conn_recycled(void)
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {
+	/* Proxy for 'advertiser recycled' */
 	.connected = on_conn_connected,
 	.recycled = on_conn_recycled,
 };

@@ -45,7 +45,9 @@ static void my_adv_start(void)
 	 */
 	if (count_conn_marked_peripheral() < target_peripheral_count) {
 		err = bt_le_adv_start(MY_ADV_PARAMS, NULL, 0, NULL, 0);
+
 		switch (err) {
+		/* Ignore failures due to connection exhaustion. */
 		case -EALREADY:
 		case -ECONNREFUSED:
 		case -ENOMEM:

@@ -62,17 +62,7 @@ static void resume_work_handler(struct k_work *self)
 	}
 
 	if (adv_starter) {
-		err = adv_starter();
-
-		switch (err) {
-		case 0:
-		case -EALREADY:
-		case -ECONNREFUSED:
-		case -ENOMEM:
-			break;
-		default:
-			LOG_ERR("adv_starter failed: %d", err);
-		}
+		adv_starter();
 	}
 
 	k_mutex_unlock(&sync);

@@ -34,21 +34,26 @@ LOG_MODULE_REGISTER(dut, LOG_LEVEL_DBG);
 /* Obs! Synchronization: Do not modify when running. */
 static uint8_t target_peripheral_count;
 
-static int my_adv_start(void)
+static void my_adv_start(void)
 {
+	int err;
+
 	LOG_DBG("");
 	/* Limit the number of peripheral connections. This is useful in
 	 * case you want to reserve a connection slot for an outgoing
 	 * connection.
 	 */
-	if (count_conn_marked_peripheral() >= target_peripheral_count) {
-		/* Delay the start. The resumer will invoke this function again
-		 * when there may be a new connection slot available.
-		 */
-		return 0;
+	if (count_conn_marked_peripheral() < target_peripheral_count) {
+		err = bt_le_adv_start(MY_ADV_PARAMS, NULL, 0, NULL, 0);
+		switch (err) {
+		case -EALREADY:
+		case -ECONNREFUSED:
+		case -ENOMEM:
+			break;
+		default:
+			__ASSERT_NO_MSG(!err);
+		}
 	}
-
-	return bt_le_adv_start(MY_ADV_PARAMS, NULL, 0, NULL, 0);
 }
 
 static void disconnect(struct bt_conn *conn, void *user_data)

@@ -24,7 +24,6 @@ static struct k_work work = {.handler = handler};
 
 static K_MUTEX_DEFINE(sync);
 
-/* Initialized to NULL, which means restarting is disabled. */
 static bt_conn_evt_sub_t *g_func;
 static enum bt_conn_evt_bits g_enabled;
 
@@ -43,7 +42,6 @@ void bt_conn_evt_sub_set(bt_conn_evt_sub_t *func, enum bt_conn_evt_bits enabled)
 static void handler(struct k_work *self)
 {
 	int err;
-	//bt_conn_evt_sub_set(NULL, BT_CONNECTED | BT_RECYCLED);
 
 	/* The timeout is defence-in-depth. The lock has a dependency
 	 * the blocking Bluetooth API. This can form a deadlock if the
@@ -78,29 +76,19 @@ static void trigger(enum bt_conn_evt_bits evt) {
 	enabled = g_enabled;
 	k_mutex_unlock(&sync);
 
-	if (func && (enabled & trigger)) {
+	if (func && (enabled & evt)) {
 		k_work_submit(&work);
 	}
 }
 
 static void on_conn_connected(struct bt_conn *conn, uint8_t conn_err)
 {
-
+	trigger(BT_CONNECTED);
 }
 
 static void on_conn_recycled(void)
 {
-	bt_conn_evt_sub_t *func;
-	enum bt_conn_evt_bits enabled;
-
-	k_mutex_lock(&sync, K_FOREVER);
-	func = g_func;
-	enabled = g_enabled;
-	k_mutex_unlock(&sync);
-
-	if (func && (enabled & BT_RECYCLED)) {
-		k_work_submit(&work);
-	}
+	trigger(BT_RECYCLED);
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {

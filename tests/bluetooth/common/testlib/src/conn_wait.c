@@ -66,3 +66,34 @@ int bt_testlib_wait_disconnected(struct bt_conn *conn)
 	k_mutex_unlock(&conn_wait_mutex);
 	return 0;
 }
+
+void bt_testlib_conn_wait_free(void)
+{
+	if (!IS_ENABLED(CONFIG_BT_CONN)) {
+		__ASSERT_NO_MSG(false);
+		return;
+	}
+
+	/* The mutex must be held duing the intial check loop to
+	 * buffer any `conn_cb.released` events.
+	 *
+	 * This ensures that any connection slots that become
+	 * free during the loop execution are detected.
+	 */
+	k_mutex_lock(&conn_wait_mutex, K_FOREVER);
+
+	for (size_t i = 0; i < CONFIG_BT_MAX_CONN; i++) {
+		struct bt_conn *conn = bt_testlib_conn_unindex(BT_CONN_TYPE_LE, i);
+
+		if (!conn) {
+			goto done;
+		}
+
+		bt_testlib_conn_unref(&conn);
+	}
+
+	k_condvar_wait(&conn_recycled, &conn_wait_mutex, K_FOREVER);
+
+done:
+	k_mutex_unlock(&conn_wait_mutex);
+}

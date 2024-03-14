@@ -12,6 +12,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util_macro.h>
 
 #include <testlib/conn.h>
 
@@ -19,6 +20,7 @@
 LOG_MODULE_REGISTER(bt_testlib_conn_wait, LOG_LEVEL_DBG);
 
 static K_MUTEX_DEFINE(conn_wait_mutex);
+static K_CONDVAR_DEFINE(conn_recycled);
 static K_CONDVAR_DEFINE(something_changed);
 
 static void on_change(struct bt_conn *conn, uint8_t err)
@@ -28,9 +30,17 @@ static void on_change(struct bt_conn *conn, uint8_t err)
 	k_mutex_unlock(&conn_wait_mutex);
 }
 
+static void on_conn_recycled(void)
+{
+	k_mutex_lock(&conn_wait_mutex, K_FOREVER);
+	k_condvar_broadcast(&conn_recycled);
+	k_mutex_unlock(&conn_wait_mutex);
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = on_change,
 	.disconnected = on_change,
+	.recycled = on_conn_recycled,
 };
 
 static enum bt_conn_state bt_conn_state(struct bt_conn *conn)
@@ -74,11 +84,11 @@ void bt_testlib_conn_wait_free(void)
 		return;
 	}
 
-	/* The mutex must be held duing the intial check loop to
-	 * buffer any `conn_cb.released` events.
+	/* The mutex must be held duing the initial check loop to buffer
+	 * any `conn_cb.released` events.
 	 *
-	 * This ensures that any connection slots that become
-	 * free during the loop execution are detected.
+	 * This ensures that any connection slots that become free
+	 * during the loop execution are detected.
 	 */
 	k_mutex_lock(&conn_wait_mutex, K_FOREVER);
 

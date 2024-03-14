@@ -1088,3 +1088,22 @@ config BT_HCI_VS_EVT_USER
 	  VS events that are not known to the stack
 
 endmenu
+
+config BT_HCI_LOG_HEXDUMP
+	bool "Log_hexdump HCI traffic"
+	depends on LOG
+	help
+	  Output HCI traffic to log using LOG_HEXDUMP.
+
+	  The logged lines will be parsable as [H4 with PHDR].
+	  Look for '!HCI!' in the log output. The start of the
+	  packet follows immediately on the same line and
+	  continues in HEXDUMP format.
+
+	  [H4 with PHDR] is H4 prefixed with 00 00 00 00 for
+	  Host to Controller traffic, and 00 00 00 01 for
+	  Controller to Host traffic.
+
+	  Hint: Use scripts/zlog2pcapng.py to parse this.
+
+	  [H4 with PHDR]: LINKTYPE_BLUETOOTH_HCI_H4_WITH_PHDR

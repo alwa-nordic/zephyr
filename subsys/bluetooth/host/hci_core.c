@@ -44,6 +44,7 @@
 
 #include "addr_internal.h"
 #include "conn_internal.h"
+#include "hci_log_hexdump.h"
 #include "iso_internal.h"
 #include "l2cap_internal.h"
 #include "gatt_internal.h"
@@ -3867,6 +3868,7 @@ int bt_send(struct net_buf *buf)
 {
 	LOG_DBG("buf %p len %u type %u", buf, buf->len, bt_buf_get_type(buf));
 
+	bt_hci_log_hexdump(buf);
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	if (IS_ENABLED(CONFIG_BT_TINYCRYPT_ECC)) {
@@ -3938,6 +3940,7 @@ static void rx_queue_put(struct net_buf *buf)
 
 static int bt_recv_unsafe(struct net_buf *buf)
 {
+	bt_hci_log_hexdump(buf);
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
 	LOG_DBG("buf %p len %u", buf, buf->len);

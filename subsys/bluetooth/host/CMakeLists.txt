@@ -7,6 +7,7 @@ add_subdirectory_ifdef(CONFIG_BT_CLASSIC classic)
 
 zephyr_library_sources_ifdef(CONFIG_BT_HCI_RAW          hci_raw.c hci_common.c)
 zephyr_library_sources_ifdef(CONFIG_BT_MONITOR          monitor.c)
+zephyr_library_sources_ifdef(CONFIG_BT_HCI_LOG_HEXDUMP  hci_log_hexdump.c)
 zephyr_library_sources_ifdef(CONFIG_BT_TINYCRYPT_ECC    hci_ecc.c)
 zephyr_library_sources_ifdef(CONFIG_BT_TESTING          testing.c)
 zephyr_library_sources_ifdef(CONFIG_BT_SETTINGS         settings.c)

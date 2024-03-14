@@ -1,0 +1,4 @@
+name: uart-1m-console
+append:
+  EXTRA_CONF_FILE: uart-1m-console.conf
+  EXTRA_DTC_OVERLAY_FILE: uart-1m-console.overlay

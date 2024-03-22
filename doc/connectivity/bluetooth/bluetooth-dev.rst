@@ -19,6 +19,110 @@ is the case for all API calls is an ongoing one, but the overall goal is
 formally stated in this paragraph. Bug reports and Pull Requests that move the
 subsystem in the direction of such goal are welcome.
 
+Q & A
+*****
+
+Q: What is a Bluetooth callback?
+
+A: A Bluetooth callback is a function pointer that is passed to
+   the Bluetooth subsystem to be called when a specific event
+   occurs. The callback is registered using the
+   :c:func:`bt_conn_cb_register` function.
+
+  There are two concepts that are both called 'callbacks' in the
+  context of the Zephyr Bluetooth subsystem:
+
+ - Registered callbacks: These are functions that are registered
+   with the Bluetooth subsystem to be called when a specific
+   event occurs. For example, the :c:func:`bt_conn_cb_register`
+   function is used to register a callback that is called when a
+   connection is established or disconnected.
+
+   You might recognize these by the terms 'Event listeners',
+   'Event handlers' or 'Interrupt handlers'.
+
+   There should usually be a corresponding function to
+   unregister the callback.
+
+   Disabling the Bluetooth system shall not clear the
+   registered callbacks. They can be though of as external
+   observers of the singleton object Bluetooth subsystem, and
+   existing outside of it.
+
+ - Callback arguments: These are passed to Bluetooth API that
+   cause some effect.
+   These callbacks are always invoked exactly once. The
+   invocation signals that the operation is retired, either
+   successfully completed or failed or aborted.
+   They are often used to inform the caller of the result of an
+   operation.
+
+Q: What types of operations can I do in a callback?
+It is important to understand that all code that runs occupies
+some execution context, that is usually a thread or an
+interrupt.
+
+Furthermore, reliable delivery guarantees are fundamentally
+propagating blocking of the consumers execution context to the
+producer execution context.
+
+The callbacks in Bluetooth give delivery guarantees, as expected
+by the intuitive developer; event listeners will never miss an
+event. In fact, the events will always be delivered in the order
+they occurred.
+
+But this means on a fundamental level that blocking in a
+Bluetooth callback will block subsequent events from being
+generated. I.e. blocking will eventually propagate to the HCI
+driver and we will stop reading out any messages from the
+controller. This includes control-flow messages from the
+controller, which means the blocking propagates to the HCI TX
+path as well.
+
+So you must assume that the Bluetooth subsystem can be
+completely stalled while you while you are in a Bluetooth
+callback. And so, you must never wait for anything that directly
+or indirectly waits on the Bluetooth subsystem in a Bluetooth
+callback.
+
+The Zephyr Bluetooth subsystem is has a lot of various buffers
+that will delay the stall of the subsystem, but it offers no
+guarantees. If the application developer want to depend on this,
+it is up to the application developer to do the heavy analysis
+of the data paths, buffer size, throughput, and their
+statistical distributions. Ald these can change between Zephyr
+versions. Or the application developer can just order more RAM
+to the point that it ought to be enough, like in a desktop
+computer OS.
+
+While in a Bluetooth callback, assume you may accidentally be
+holding a lock on the following:
+ - The system-wide work-queue.
+ - The Bluetooth HCI RX path.
+ - The Bluetooth HCI TX path.
+
+Q: Is it okay to call the Bluetooth API in a callback?
+A:
+
+Short answer is 'no', there is no guarantee it will work. But if
+you configure the relevant APIs to have plenty of buffers and
+test it thoroughly, it might work for you.
+
+You can of-course invoke any Bluetooth API marked ISR-safe or
+non-blocking. But be mindful of the stack size.
+
+ISR-safe function: These functions are lock-less or guarantee no
+hard dependencies on lockable resources. They may have soft
+dependencies and report failure if the resource is not
+immediately available.
+
+Thread-safe function: These functions are safe to call from any
+thread context, including callbacks.
+
+Q: I found a sample that calls the Bluetooth API in a callback,
+   is that a bug?
+A: Yes, it is a bug. Please report it.
+
 .. _bluetooth-hw-setup:
 
 Hardware setup

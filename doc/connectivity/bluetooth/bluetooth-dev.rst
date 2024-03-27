@@ -22,14 +22,72 @@ subsystem in the direction of such goal are welcome.
 Q & A
 *****
 
-Q: What is a Bluetooth callback?
 
-A: A Bluetooth callback is a function pointer that is passed to
-   the Bluetooth subsystem to be called when a specific event
-   occurs. The callback is registered using the
-   :c:func:`bt_conn_cb_register` function.
+= Event loop vs events and callbacks.
 
-  There are two concepts that are both called 'callbacks' in the
+The Bluetooth host has to talk HCI.
+
+HCI RX path has
+ - Blocking: no flow control "events", and ISO data
+  - an idle controller produces no events.
+  - each normal command produces exactly one status.
+   - and causes zero or more events to be sent
+   - a 'command complete' is a fusion of a status and a data
+     event.
+   - ISO has dedicated flow control. This is fine, since ISO is
+    supposed to be a real-time transport. Users of the ISO APIs
+    must be aware that they are stalling the RX path.
+ - Non-blocking, blocking cancelable: ACL data.
+  - normally have flow control but it's broken. The controller
+    gives itself credits by disconnecting.
+   - this means data that is already received must be up for
+     discarding if the host needs to continue reading from HCI.
+   - there is no way to specify host buffers per connection. so
+     when a connection drops, the controller can immediately use
+     the credits it has given itself for the other connection.
+   - the disconnect event is a blocking cancellation of the acl
+     rx data. The application may still choose to process it,
+     but while it's doing so, it is blocking HCI.
+
+Blocking HCI of course implies blocking ISO data, which likely
+is real-time sensitive. It's therefore imperative that the
+cancellation if processed quickly.
+
+The HCI TX path is dependent on the RX path because
+
+SDC quirk: no ACL cancellation: The SDC will delay the
+disconnected event until the host has freed all buffers
+associated. Can this cause troubles? Forms a dependency from the
+disconnect to the processing of all data. If the processing of
+the data is dependent on the disconnect, we have formed a
+deadlock.
+
+== What is a Bluetooth callback?
+
+In the Zephyr community, all dependency injection is termed a
+'callback'.
+
+Synchronous callbacks. E.g. `bt_conn_foreach`. This function
+takes a function pointer as an argument and repeatedly invokes
+that function.
+
+Asynchronous callbacks: E.g. `bt_gatt_write`. `func` is invoked
+when the params pointer is no longer in use. It also serves
+double-duty and delivers a status code. Since this `func`
+signals the end of the operation started by `bt_gatt_write` and
+`func` was registered on that operation.
+
+Some callback parameters are accompanied by a `user_data`
+parameter. This parameter value is passed as-is. It carries not
+meaning to the function that accepts the callback. Instead, it
+allows some extra data to be attached to the function pointer.
+Mathematically this is an approximation to higher
+order-functions. It allows the callback to compose.
+
+All function pointer may be informally referred to as
+'callback' in the Zephyr community.
+
+There are two concepts that are both called 'callbacks' in the
   context of the Zephyr Bluetooth subsystem:
 
  - Registered callbacks: These are functions that are registered
@@ -58,6 +116,7 @@ A: A Bluetooth callback is a function pointer that is passed to
    operation.
 
 Q: What types of operations can I do in a callback?
+
 It is important to understand that all code that runs occupies
 some execution context, that is usually a thread or an
 interrupt.
@@ -101,27 +160,42 @@ holding a lock on the following:
  - The Bluetooth HCI RX path.
  - The Bluetooth HCI TX path.
 
+Q: What happens if I block in a Bluetooth callback?
+
+Blocking in a Bluetooth callback may pause all HCI transport in
+both directions, and it may be blocking the Zephyr system work
+queue.
+
+The above rule applies to all of Zephyr host's callbacks that do
+not specify otherwise.
+
 Q: Is it okay to call the Bluetooth API in a callback?
-A:
 
-Short answer is 'no', there is no guarantee it will work. But if
-you configure the relevant APIs to have plenty of buffers and
-test it thoroughly, it might work for you.
+Short answer is 'no', there is no guarantee calling arbitrary
+Bluetooth API in a callback will work. But, if you configure the
+relevant APIs to have plenty of buffers and test it thoroughly,
+it might work for you.
 
-You can of-course invoke any Bluetooth API marked ISR-safe or
-non-blocking. But be mindful of the stack size.
+This is because a lot of Bluetooth API is blocking on the same
+resources that an active callback holds. This forms a dead-lock.
 
-ISR-safe function: These functions are lock-less or guarantee no
-hard dependencies on lockable resources. They may have soft
-dependencies and report failure if the resource is not
-immediately available.
+You can of-course invoke any Bluetooth API marked ISR-safe.
 
-Thread-safe function: These functions are safe to call from any
-thread context, including callbacks.
+Q: How much stack space is available in Bluetooth callbacks?
+
+There are no guarantees about stack space.
+
+See also CONFIG_BT_RX_STACK_SIZE.
+
+Q: Do all the BT callbacks behave the same way and have same
+properties?
+
+There are no such guarantees.
 
 Q: I found a sample that calls the Bluetooth API in a callback,
    is that a bug?
-A: Yes, it is a bug. Please report it.
+
+Yes, it is a bug. Please report it.
 
 .. _bluetooth-hw-setup:
 

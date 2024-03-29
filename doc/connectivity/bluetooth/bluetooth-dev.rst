@@ -185,12 +185,27 @@ Q: How much stack space is available in Bluetooth callbacks?
 
 There are no guarantees about stack space.
 
-See also CONFIG_BT_RX_STACK_SIZE.
+Q: How can I get more stack space in the Bluetooth callbacks?
+
+Stack size are often selected by some kconfig, and you can
+override those. The following are some configs that may play a
+role. This is not an exhaustive list.
+
+ - CONFIG_BT_RX_STACK_SIZE
+ - CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE
+
+Some callbacks are invoked on arbitrary threads. There is no
+feasible way of controlling this. E.g. calling into
+`bt_conn_unref` may involve running callbacks.
 
 Q: Do all the BT callbacks behave the same way and have same
 properties?
 
-There are no such guarantees.
+There are no such guarantees. In fact, there is no guarantee
+that the same callback will have the same properties between
+invocations.
+
+Each invocation may be on a different thread.
 
 Q: I found a sample that calls the Bluetooth API in a callback,
    is that a bug?

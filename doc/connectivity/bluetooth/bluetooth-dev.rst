@@ -205,12 +205,68 @@ There are no such guarantees. In fact, there is no guarantee
 that the same callback will have the same properties between
 invocations.
 
-Each invocation may be on a different thread.
+For illustration, each invocation may be
+ - on a different thread
+  - including but not limited to the BT threads
+  - may be some thread that called into the BT subsystem
+   - e.g. `bt_conn_unref`
+ - or a different work queue
+  - including the system work-queue
+ - with a different priority
+ - with a different preempt/cooperative status
+ - with a different stack size
+ - with a different stack use
 
 Q: I found a sample that calls the Bluetooth API in a callback,
    is that a bug?
 
-Yes, it is a bug. Please report it.
+Yes, it is a bug. Please report it. Yes, this is historically
+common, but we want to remedy it. PRs with fixes for this are
+welcome.
+
+Q: I though callbacks and asynchronous APIs would make
+developing easer than a event queue would, not harder. Is it
+possible to fix these issues with callbacks?
+
+The problem is the callbacks are not separaed will enough from
+the HCI event loop. They are just a thin wrapper.
+
+What do I mean by separation? To obtain separation, there has to
+be a summarization between HCI and the callbacks. This could be
+a 'virtual' representation of the controller. The host processes
+events from the controller quickly, folding it into the
+representation. Because we are limited to a fixed amount of
+memory, the representation must inherently be lossy with regards
+to the event history. But the representation can accurately
+depict one state of the controller.
+
+To exemplify the above, we cannot store a queue of connected /
+disconnected events if we treat them as a 'general event'. Only
+by immediately parsing the event, understanding that it's e.g. a
+disconnection, and updating the depiction of the controller; by
+marking a connection as disconnected.
+
+We can mark a connection as disconnected because there is a
+specific memory allocation for a connection that was previously
+made. This is the bt_conn object in Zephyr for example.
+
+The application can register callbacks, but how do we know when
+to invoke them? Consider is as a interrupt flag. The application
+has to provide a memory to store the flag. The flag can be
+complex. In the case of disconnects, we can have the application
+provide an array flags, with one flag for each connection slot.
+Then we have a memory location, a register in RTL, to remember
+the need to invoke.
+
+Any time you don't provide a memory, it will necessarily take
+and hold onto some other resource in exchange. The information
+has to go somewhere. This somewhere may be the stack of the
+Bluetooth RX thread. But this thread is intertwined with the HCI
+transport, so we have lost our separation.
+
+Rule of thumb:
+Callbacks registration must provide memory, not just for storing
+the pointer and user data, but also for the request flag.
 
 .. _bluetooth-hw-setup:
 

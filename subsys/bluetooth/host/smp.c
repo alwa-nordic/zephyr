@@ -808,8 +808,12 @@ static void smp_br_timeout(struct k_work *work)
 
 	LOG_ERR("SMP Timeout");
 
+	k_sched_lock();
+
 	smp_pairing_br_complete(smp, BT_SMP_ERR_UNSPECIFIED);
 	atomic_set_bit(smp->flags, SMP_FLAG_TIMEOUT);
+
+	k_sched_unlock();
 }
 
 static void smp_br_send(struct bt_smp_br *smp, struct net_buf *buf,
@@ -1737,12 +1741,16 @@ static void smp_timeout(struct k_work *work)
 
 	LOG_ERR("SMP Timeout");
 
+	k_sched_lock();
+
 	smp_pairing_complete(smp, BT_SMP_ERR_UNSPECIFIED);
 
 	/* smp_pairing_complete clears flags so setting timeout flag must come
 	 * after it.
 	 */
 	atomic_set_bit(smp->flags, SMP_FLAG_TIMEOUT);
+
+	k_sched_unlock();
 }
 
 static void smp_send(struct bt_smp *smp, struct net_buf *buf,

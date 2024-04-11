@@ -274,9 +274,13 @@ destroy:
 static void l2cap_rtx_timeout(struct k_work *work)
 {
 	struct bt_l2cap_le_chan *chan = LE_CHAN_RTX(work);
-	struct bt_conn *conn = chan->chan.conn;
+	struct bt_conn *conn;
 
 	LOG_ERR("chan %p timeout", chan);
+
+	k_sched_lock();
+
+	conn = chan->chan.conn;
 
 	bt_l2cap_chan_remove(conn, &chan->chan);
 	bt_l2cap_chan_del(&chan->chan);
@@ -285,6 +289,8 @@ static void l2cap_rtx_timeout(struct k_work *work)
 	while ((chan = l2cap_remove_ident(conn, chan->ident))) {
 		bt_l2cap_chan_del(&chan->chan);
 	}
+
+	k_sched_unlock();
 }
 
 static void l2cap_chan_le_recv(struct bt_l2cap_le_chan *chan,
@@ -295,11 +301,15 @@ static void l2cap_rx_process(struct k_work *work)
 	struct bt_l2cap_le_chan *ch = CHAN_RX(work);
 	struct net_buf *buf;
 
+	k_sched_lock();
+
 	while ((buf = net_buf_get(&ch->rx_queue, K_NO_WAIT))) {
 		LOG_DBG("ch %p buf %p", ch, buf);
 		l2cap_chan_le_recv(ch, buf);
 		net_buf_unref(buf);
 	}
+
+	k_sched_unlock();
 }
 #endif /* CONFIG_BT_L2CAP_DYNAMIC_CHANNEL */
 
@@ -903,6 +913,8 @@ static void l2cap_chan_tx_process(struct k_work *work)
 
 	ch = CONTAINER_OF(k_work_delayable_from_work(work), struct bt_l2cap_le_chan, tx_work);
 
+	k_sched_lock();
+
 	/* Resume tx in case there are buffers in the queue */
 	while ((buf = l2cap_chan_le_get_tx_buf(ch))) {
 		/* Here buf is either:
@@ -927,6 +939,8 @@ static void l2cap_chan_tx_process(struct k_work *work)
 			break;
 		}
 	}
+
+	k_sched_unlock();
 }
 
 static void l2cap_chan_tx_init(struct bt_l2cap_le_chan *chan)

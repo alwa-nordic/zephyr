@@ -1520,7 +1520,9 @@ static void tx_complete_work(struct k_work *work)
 	struct bt_conn *conn = CONTAINER_OF(work, struct bt_conn,
 					    tx_complete_work);
 
+	k_sched_lock();
 	tx_notify(conn);
+	k_sched_unlock();
 }
 #endif /* CONFIG_BT_CONN_TX */
 
@@ -1869,7 +1871,14 @@ static struct bt_conn *conn_lookup_sco(struct bt_conn *conn)
 }
 #endif /* CONFIG_BT_CLASSIC */
 
+static void deferred_work_(struct k_work *work);
 static void deferred_work(struct k_work *work)
+{
+	k_sched_lock();
+	deferred_work_(work);
+	k_sched_unlock();
+}
+static void deferred_work_(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct bt_conn *conn = CONTAINER_OF(dwork, struct bt_conn, deferred_work);

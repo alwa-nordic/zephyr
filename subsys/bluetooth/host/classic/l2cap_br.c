@@ -182,6 +182,8 @@ static void l2cap_br_rtx_timeout(struct k_work *work)
 
 	LOG_WRN("chan %p timeout", chan);
 
+	k_sched_lock();
+
 	if (chan->rx.cid == BT_L2CAP_CID_BR_SIG) {
 		LOG_DBG("Skip BR/EDR signalling channel ");
 		atomic_clear_bit(chan->flags, L2CAP_FLAG_SIG_INFO_PENDING);
@@ -201,6 +203,8 @@ static void l2cap_br_rtx_timeout(struct k_work *work)
 	default:
 		break;
 	}
+
+	k_sched_unlock();
 }
 
 static bool l2cap_br_chan_add(struct bt_conn *conn, struct bt_l2cap_chan *chan,

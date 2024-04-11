@@ -3062,6 +3062,8 @@ static void att_timeout(struct k_work *work)
 	struct bt_att_chan *chan = CONTAINER_OF(dwork, struct bt_att_chan,
 						timeout_work);
 
+	k_sched_lock();
+
 	bt_addr_le_to_str(bt_conn_get_dst(chan->att->conn), addr, sizeof(addr));
 	LOG_ERR("ATT Timeout for device %s", addr);
 
@@ -3074,6 +3076,8 @@ static void att_timeout(struct k_work *work)
 	 * target device on this ATT Bearer.
 	 */
 	bt_att_disconnected(&chan->chan.chan);
+
+	k_sched_unlock();
 }
 
 static struct bt_att_chan *att_get_fixed_chan(struct bt_conn *conn)
@@ -3366,7 +3370,11 @@ static void att_enhanced_connection_work_handler(struct k_work *work)
 {
 	const struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	const struct bt_att *att = CONTAINER_OF(dwork, struct bt_att, eatt.connection_work);
-	const int err = bt_eatt_connect(att->conn, att->eatt.chans_to_connect);
+	int err;
+
+	k_sched_lock();
+
+	err = bt_eatt_connect(att->conn, att->eatt.chans_to_connect);
 
 	if (err == -ENOMEM) {
 		LOG_DBG("Failed to connect %d EATT channels, central has probably "
@@ -3377,6 +3385,7 @@ static void att_enhanced_connection_work_handler(struct k_work *work)
 			err);
 	}
 
+	k_sched_unlock();
 }
 #endif /* CONFIG_BT_EATT */
 

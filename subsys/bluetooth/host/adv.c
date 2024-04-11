@@ -6,6 +6,7 @@
  */
 #include <sys/types.h>
 
+#include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
@@ -1758,6 +1759,8 @@ static void adv_timeout(struct k_work *work)
 	dwork = k_work_delayable_from_work(work);
 	adv = CONTAINER_OF(dwork, struct bt_le_ext_adv, lim_adv_timeout_work);
 
+	k_sched_lock();
+
 #if defined(CONFIG_BT_EXT_ADV)
 	if (adv == bt_dev.adv) {
 		err = bt_le_adv_stop();
@@ -1767,6 +1770,9 @@ static void adv_timeout(struct k_work *work)
 #else
 	err = bt_le_adv_stop();
 #endif
+
+	k_sched_unlock();
+
 	if (err) {
 		LOG_WRN("Failed to stop advertising: %d", err);
 	}

@@ -1563,7 +1563,14 @@ BT_GATT_SERVICE_DEFINE(gtbs_svc, BT_TBS_SERVICE_DEFINE(BT_UUID_GTBS, &gtbs_inst.
 BT_GATT_SERVICE_INSTANCE_DEFINE(tbs_service_list, svc_insts, CONFIG_BT_TBS_BEARER_COUNT,
 				BT_TBS_SERVICE_DEFINITION);
 
+static void signal_interval_timeout_(struct k_work *work);
 static void signal_interval_timeout(struct k_work *work)
+{
+	k_sched_lock();
+	signal_interval_timeout_(work);
+	k_sched_unlock();
+}
+static void signal_interval_timeout_(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct service_inst *inst = CONTAINER_OF(dwork, struct service_inst,

@@ -908,7 +908,14 @@ static void notify_cb(struct bt_conn *conn, void *data)
 	}
 }
 
+static void deferred_nfy_work_handler_(struct k_work *work);
 static void deferred_nfy_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	deferred_nfy_work_handler_(work);
+	k_sched_unlock();
+}
+static void deferred_nfy_work_handler_(struct k_work *work)
 {
 	bt_conn_foreach(BT_CONN_TYPE_LE, notify_cb, NULL);
 }

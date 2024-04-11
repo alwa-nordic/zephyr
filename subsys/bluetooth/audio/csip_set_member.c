@@ -436,7 +436,14 @@ static ssize_t read_rank(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 
 }
 
+static void set_lock_timer_handler_(struct k_work *work);
 static void set_lock_timer_handler(struct k_work *work)
+{
+	k_sched_lock();
+	set_lock_timer_handler_(work);
+	k_sched_unlock();
+}
+static void set_lock_timer_handler_(struct k_work *work)
 {
 	struct k_work_delayable *delayable;
 	struct bt_csip_set_member_svc_inst *svc_inst;
@@ -777,7 +784,14 @@ static void notify_cb(struct bt_conn *conn, void *data)
 	}
 }
 
+static void deferred_nfy_work_handler_(struct k_work *work);
 static void deferred_nfy_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	deferred_nfy_work_handler_(work);
+	k_sched_unlock();
+}
+static void deferred_nfy_work_handler_(struct k_work *work)
 {
 	bt_conn_foreach(BT_CONN_TYPE_LE, notify_cb, NULL);
 }

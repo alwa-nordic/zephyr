@@ -217,7 +217,14 @@ static int ase_state_notify(struct bt_ascs_ase *ase)
 	return err;
 }
 
+static void ascs_disconnect_stream_work_handler_(struct k_work *work);
 static void ascs_disconnect_stream_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	ascs_disconnect_stream_work_handler_(work);
+	k_sched_unlock();
+}
+static void ascs_disconnect_stream_work_handler_(struct k_work *work)
 {
 	struct k_work_delayable *d_work = k_work_delayable_from_work(work);
 	struct bt_ascs_ase *ase = CONTAINER_OF(d_work, struct bt_ascs_ase,
@@ -478,7 +485,14 @@ static void ase_enter_state_releasing(struct bt_ascs_ase *ase)
 	}
 }
 
+static void state_transition_work_handler_(struct k_work *work);
 static void state_transition_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	state_transition_work_handler_(work);
+	k_sched_unlock();
+}
+static void state_transition_work_handler_(struct k_work *work)
 {
 	struct k_work_delayable *d_work = k_work_delayable_from_work(work);
 	struct bt_ascs_ase *ase = CONTAINER_OF(d_work, struct bt_ascs_ase, state_transition_work);

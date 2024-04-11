@@ -136,7 +136,14 @@ static uint16_t interval_to_sync_timeout(uint16_t pa_interval)
 	return pa_timeout;
 }
 
+static void pa_timer_handler_(struct k_work *work);
 static void pa_timer_handler(struct k_work *work)
+{
+	k_sched_lock();
+	pa_timer_handler_(work);
+	k_sched_unlock();
+}
+static void pa_timer_handler_(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct sync_state *state = CONTAINER_OF(dwork, struct sync_state, pa_timer);

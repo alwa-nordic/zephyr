@@ -1545,7 +1545,14 @@ static void long_ase_read(struct bt_bap_unicast_client_ep *client_ep)
 	}
 }
 
+static void delayed_ase_read_handler_(struct k_work *work);
 static void delayed_ase_read_handler(struct k_work *work)
+{
+	k_sched_lock();
+	delayed_ase_read_handler_(work);
+	k_sched_unlock();
+}
+static void delayed_ase_read_handler_(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct bt_bap_unicast_client_ep *client_ep =

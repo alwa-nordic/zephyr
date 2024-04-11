@@ -91,7 +91,14 @@ static void notify(struct bt_vocs_server *inst, enum bt_vocs_notify notify,
 	}
 }
 
+static void notify_work_handler_(struct k_work *work);
 static void notify_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	notify_work_handler_(work);
+	k_sched_unlock();
+}
+static void notify_work_handler_(struct k_work *work)
 {
 	struct k_work_delayable *d_work = k_work_delayable_from_work(work);
 	struct bt_vocs_server *inst = CONTAINER_OF(d_work, struct bt_vocs_server, notify_work);

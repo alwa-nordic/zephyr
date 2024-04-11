@@ -2907,6 +2907,8 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 		events[0].state = K_POLL_STATE_NOT_READY;
 		ev_count = 1;
 
+		k_sched_lock();
+
 		/* This adds the FIFO per-connection */
 		if (IS_ENABLED(CONFIG_BT_CONN) || IS_ENABLED(CONFIG_BT_ISO)) {
 			ev_count += bt_conn_prepare_events(&events[1]);
@@ -2918,6 +2920,8 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 		BT_ASSERT(err == 0);
 
 		process_events(events, ev_count);
+
+		k_sched_unlock();
 
 		/* Make sure we don't hog the CPU if there's all the time
 		 * some ready events.

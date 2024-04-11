@@ -222,7 +222,14 @@ static bool csip_found(struct bt_data *data, void *user_data)
 	return true;
 }
 
+static void discover_members_timer_handler_(struct k_work *work);
 static void discover_members_timer_handler(struct k_work *work)
+{
+	k_sched_lock();
+	discover_members_timer_handler_(work);
+	k_sched_unlock();
+}
+static void discover_members_timer_handler_(struct k_work *work)
 {
 	int err;
 

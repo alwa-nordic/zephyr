@@ -1268,7 +1268,14 @@ static int rl_access_check(bool check_ar)
 		? 0 : 1;
 }
 
+static void rpa_timeout_(struct k_work *work);
 static void rpa_timeout(struct k_work *work)
+{
+	k_sched_lock();
+	rpa_timeout_(work);
+	k_sched_unlock();
+}
+static void rpa_timeout_(struct k_work *work)
 {
 	ull_filter_rpa_update(true);
 	k_work_schedule(&rpa_work, K_MSEC(rpa_timeout_ms));
@@ -1492,7 +1499,14 @@ static void conn_rpa_update(uint8_t rl_idx)
 #endif /* CONFIG_BT_CTLR_PRIVACY && CONFIG_BT_CTLR_CHECK_SAME_PEER_CONN */
 
 #if defined(CONFIG_BT_CTLR_SW_DEFERRED_PRIVACY)
+static void target_resolve_(struct k_work *work);
 static void target_resolve(struct k_work *work)
+{
+	k_sched_lock();
+	target_resolve_(work);
+	k_sched_unlock();
+}
+static void target_resolve_(struct k_work *work)
 {
 	uint8_t j, idx;
 	bt_addr_t *search_rpa;
@@ -1562,7 +1576,14 @@ static uint8_t prpa_cache_try_resolve(bt_addr_t *rpa)
 	return FILTER_IDX_NONE;
 }
 
+static void prpa_cache_resolve_(struct k_work *work);
 static void prpa_cache_resolve(struct k_work *work)
+{
+	k_sched_lock();
+	prpa_cache_resolve_(work);
+	k_sched_unlock();
+}
+static void prpa_cache_resolve_(struct k_work *work)
 {
 	uint8_t i, j;
 	bt_addr_t *search_rpa;

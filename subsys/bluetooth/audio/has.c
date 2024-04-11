@@ -407,7 +407,14 @@ BT_CONN_CB_DEFINE(conn_cb) = {
 	.identity_resolved = identity_resolved,
 };
 
+static void notify_work_handler_(struct k_work *work);
 static void notify_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	notify_work_handler_(work);
+	k_sched_unlock();
+}
+static void notify_work_handler_(struct k_work *work)
 {
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct has_client *client = CONTAINER_OF(dwork, struct has_client, notify_work);

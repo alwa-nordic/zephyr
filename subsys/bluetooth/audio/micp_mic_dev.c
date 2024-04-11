@@ -50,7 +50,14 @@ static ssize_t read_mute(struct bt_conn *conn,
 				 &micp_inst.mute, sizeof(micp_inst.mute));
 }
 
+static void notify_work_handler_(struct k_work *work);
 static void notify_work_handler(struct k_work *work)
+{
+	k_sched_lock();
+	notify_work_handler_(work);
+	k_sched_unlock();
+}
+static void notify_work_handler_(struct k_work *work)
 {
 	struct k_work_delayable *d_work = k_work_delayable_from_work(work);
 	struct bt_micp_server *server = CONTAINER_OF(d_work, struct bt_micp_server, notify_work);

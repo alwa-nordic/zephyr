@@ -282,7 +282,14 @@ static int init_lc3_encoder(const struct shell_stream *sh_stream)
 	return 0;
 }
 
+static void lc3_audio_send_data_(struct k_work *work);
 static void lc3_audio_send_data(struct k_work *work)
+{
+	k_sched_lock();
+	lc3_audio_send_data_(work);
+	k_sched_unlock();
+}
+static void lc3_audio_send_data_(struct k_work *work)
 {
 	struct shell_stream *sh_stream = CONTAINER_OF(k_work_delayable_from_work(work),
 						      struct shell_stream, audio_send_work);

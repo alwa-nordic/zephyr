@@ -7,6 +7,7 @@
 
 #include <stdbool.h>
 
+#include <zephyr/kernel.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/check.h>
@@ -660,7 +661,14 @@ static void le_force_rpa_timeout(void)
 }
 
 #if defined(CONFIG_BT_PRIVACY)
+static void rpa_timeout_(struct k_work *work);
 static void rpa_timeout(struct k_work *work)
+{
+	k_sched_lock();
+	rpa_timeout_(work);
+	k_sched_unlock();
+}
+static void rpa_timeout_(struct k_work *work)
 {
 	bool adv_enabled;
 

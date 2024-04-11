@@ -452,9 +452,13 @@ static void rfcomm_dlc_rtx_timeout(struct k_work *work)
 
 	LOG_WRN("dlc %p state %d timeout", dlc, dlc->state);
 
+	k_sched_lock();
+
 	rfcomm_dlcs_remove_dlci(session->dlcs, dlc->dlci);
 	rfcomm_dlc_disconnect(dlc);
 	rfcomm_session_disconnect(session);
+
+	k_sched_unlock();
 }
 
 static void rfcomm_dlc_init(struct bt_rfcomm_dlc *dlc,
@@ -1679,6 +1683,8 @@ static void rfcomm_session_rtx_timeout(struct k_work *work)
 
 	LOG_WRN("session %p state %d timeout", session, session->state);
 
+	k_sched_lock();
+
 	switch (session->state) {
 	case BT_RFCOMM_STATE_CONNECTED:
 		rfcomm_session_disconnect(session);
@@ -1690,6 +1696,8 @@ static void rfcomm_session_rtx_timeout(struct k_work *work)
 		}
 		break;
 	}
+
+	k_sched_unlock();
 }
 
 static struct bt_rfcomm_session *rfcomm_session_new(bt_rfcomm_role_t role)

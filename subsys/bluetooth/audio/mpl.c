@@ -2311,7 +2311,14 @@ static uint8_t get_content_ctrl_id(void)
 	return media_player.content_ctrl_id;
 }
 
+static void pos_work_cb_(struct k_work *work);
 static void pos_work_cb(struct k_work *work)
+{
+	k_sched_lock();
+	pos_work_cb_(work);
+	k_sched_unlock();
+}
+static void pos_work_cb_(struct k_work *work)
 {
 	const int32_t pos_diff_cs = TRACK_POS_WORK_DELAY_MS / 10; /* position is in centiseconds*/
 

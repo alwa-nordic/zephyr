@@ -1415,7 +1415,9 @@ static void delayed_store(struct k_work *work)
 	for (size_t i = 0; i < ARRAY_SIZE(gatt_delayed_store.peer_list); i++) {
 		el = &store->peer_list[i];
 
+		k_sched_lock();
 		gatt_store_ccc_cf(el->id, &el->peer);
+		k_sched_unlock();
 	}
 }
 #endif	/* CONFIG_BT_SETTINGS_DELAYED_STORE */

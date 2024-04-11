@@ -382,7 +382,14 @@ static void long_bap_read(struct bt_conn *conn, uint16_t handle)
 	}
 }
 
+static void delayed_bap_read_handler_(struct k_work *work);
 static void delayed_bap_read_handler(struct k_work *work)
+{
+	k_sched_lock();
+	delayed_bap_read_handler_(work);
+	k_sched_unlock();
+}
+static void delayed_bap_read_handler_(struct k_work *work)
 {
 	long_bap_read(broadcast_assistant.conn, broadcast_assistant.long_read_handle);
 }

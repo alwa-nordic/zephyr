@@ -157,9 +157,13 @@ struct bt_l2cap_le_endpoint {
 	uint16_t				mtu;
 	/** Endpoint Maximum PDU payload Size */
 	uint16_t				mps;
-	/** Endpoint initial credits */
+	/**
+	 * @internal
+	 * @deprecated This field has no function.
+	 * @sa bt_l2cap_chan_give_credits
+	 */
 	uint16_t				init_credits;
-	/** Endpoint credits */
+	/** @internal Endpoint credits */
 	atomic_t			credits;
 };
 
@@ -619,9 +623,11 @@ int bt_l2cap_chan_send(struct bt_l2cap_chan *chan, struct net_buf *buf);
  *  Adding zero credits is not allowed.
  *
  *  Credits can be given before entering the @ref BT_L2CAP_CONNECTING state.
- *  Doing so will adjust the 'initial credits' sent in the connection PDU.
+ *  Doing so will adjust the 'initial credits' sent in the connection PDU. The
+ *  initial credits are not otherwise special.
  *
  *  Must not be called while the channel is in @ref BT_L2CAP_CONNECTING state.
+ *  This limitation may be removed in the future.
  *
  *  @return 0 in case of success or negative value in case of error.
  */

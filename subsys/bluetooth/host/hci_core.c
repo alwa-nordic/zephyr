@@ -50,6 +50,7 @@
 #include "smp.h"
 #include "crypto.h"
 #include "settings.h"
+#include "syscalls/kernel.h"
 
 #if defined(CONFIG_BT_CLASSIC)
 #include "classic/br.h"
@@ -2803,6 +2804,42 @@ static void hci_event(struct net_buf *buf)
 	net_buf_unref(buf);
 }
 
+static struct k_poll_signal cmd_gen_sig;
+static struct net_buf *cmd_gen_buf;
+
+void bt_hci_tx_cmd_req(void)
+{
+	k_poll_signal_raise(&cmd_gen_sig, 0);
+}
+
+void bt_dev_rl_tx_cmd_gen(struct net_buf *cmd_buf);
+static void gen_cmd(void)
+{
+	k_poll_signal_reset(&cmd_gen_sig);
+	bt_dev_rl_tx_cmd_gen(cmd_gen_buf);
+}
+
+static int cmd_gen_ev_get(struct k_poll_event *event)
+{
+	int signal_result;
+	unsigned int signaled;
+
+	k_poll_signal_check(&cmd_gen_sig, &signaled, &signal_result);
+
+	if (!signaled) {
+		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
+			K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &cmd_gen_sig, BT_EVENT_CMD_GEN);
+		return 1;
+	}
+
+	if (!cmd_gen_buf) {
+		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
+			K_POLL_TYPE_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &hci_cmd_pool.free, BT_EVENT_CMD_GEN);
+	}
+
+	return 1;
+}
+
 static void send_cmd(void)
 {
 	struct net_buf *buf;
@@ -2846,6 +2883,9 @@ static void process_events(struct k_poll_event *ev, int count)
 
 		switch (ev->state) {
 		case K_POLL_STATE_SIGNALED:
+			if (ev->tag == BT_EVENT_CMD_GEN) {
+				gen_cmd();
+			}
 			break;
 		case K_POLL_STATE_SEM_AVAILABLE:
 			/* After this fn is exec'd, `bt_conn_prepare_events()`
@@ -2880,19 +2920,19 @@ static void process_events(struct k_poll_event *ev, int count)
 
 #if defined(CONFIG_BT_CONN)
 #if defined(CONFIG_BT_ISO)
-/* command FIFO + conn_change signal + MAX_CONN + ISO_MAX_CHAN */
-#define EV_COUNT (2 + CONFIG_BT_MAX_CONN + CONFIG_BT_ISO_MAX_CHAN)
+/* command gen + command FIFO + conn_change signal + MAX_CONN + ISO_MAX_CHAN */
+#define EV_COUNT (3 + CONFIG_BT_MAX_CONN + CONFIG_BT_ISO_MAX_CHAN)
 #else
-/* command FIFO + conn_change signal + MAX_CONN */
-#define EV_COUNT (2 + CONFIG_BT_MAX_CONN)
+/* command gen + command FIFO + conn_change signal + MAX_CONN */
+#define EV_COUNT (3 + CONFIG_BT_MAX_CONN)
 #endif /* CONFIG_BT_ISO */
 #else
 #if defined(CONFIG_BT_ISO)
-/* command FIFO + conn_change signal + ISO_MAX_CHAN */
-#define EV_COUNT (2 + CONFIG_BT_ISO_MAX_CHAN)
+/* command gen + command FIFO + conn_change signal + ISO_MAX_CHAN */
+#define EV_COUNT (3 + CONFIG_BT_ISO_MAX_CHAN)
 #else
-/* command FIFO */
-#define EV_COUNT 1
+/* command gen + command FIFO */
+#define EV_COUNT 2
 #endif /* CONFIG_BT_ISO */
 #endif /* CONFIG_BT_CONN */
 
@@ -2905,6 +2945,8 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 						BT_EVENT_CMD_TX),
 	};
 
+	cmd_gen_buf = bt_hci_cmd_create(0, 0);
+
 	LOG_DBG("Started");
 
 	while (1) {
@@ -2913,9 +2955,11 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 		events[0].state = K_POLL_STATE_NOT_READY;
 		ev_count = 1;
 
+		ev_count += cmd_gen_ev_get(&events[ev_count]);
+
 		/* This adds the FIFO per-connection */
 		if (IS_ENABLED(CONFIG_BT_CONN) || IS_ENABLED(CONFIG_BT_ISO)) {
-			ev_count += bt_conn_prepare_events(&events[1]);
+			ev_count += bt_conn_prepare_events(&events[ev_count]);
 		}
 
 		LOG_DBG("Calling k_poll with %d events", ev_count);

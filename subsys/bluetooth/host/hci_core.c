@@ -51,6 +51,7 @@
 #include "crypto.h"
 #include "settings.h"
 #include "syscalls/kernel.h"
+#include "zephyr/bluetooth/buf.h"
 
 #if defined(CONFIG_BT_CLASSIC)
 #include "classic/br.h"
@@ -247,6 +248,42 @@ void bt_hci_host_num_completed_packets(struct net_buf *buf)
 }
 #endif /* defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL) */
 
+void bt_hci_cmd_set_hdr(struct net_buf *buf, uint16_t opcode, uint8_t param_len)
+{
+	struct bt_hci_cmd_hdr *hdr;
+
+	__ASSERT_NO_MSG(buf->len >= sizeof(*hdr));
+	__ASSERT_NO_MSG(bt_buf_get_type(buf) == BT_BUF_CMD);
+
+	hdr = (void *)buf->data;
+	hdr->opcode = sys_cpu_to_le16(opcode);
+	hdr->param_len = param_len;
+
+	/* No locking needed: `cmd(buf)` borrows `buf` */
+	cmd(buf)->opcode = opcode;
+	cmd(buf)->sync = NULL;
+	cmd(buf)->state = NULL;
+}
+
+struct net_buf *bt_hci_cmd_create2(void)
+{
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&hci_cmd_pool, K_NO_WAIT);
+
+	if (buf) {
+		net_buf_reserve(buf, BT_BUF_RESERVE);
+		bt_buf_set_type(buf, BT_BUF_CMD);
+
+		/* No locking needed: `cmd(buf)` borrows `buf` */
+		cmd(buf)->opcode = 0;
+		cmd(buf)->sync = NULL;
+		cmd(buf)->state = NULL;
+	}
+
+	return buf;
+}
+
 struct net_buf *bt_hci_cmd_create(uint16_t opcode, uint8_t param_len)
 {
 	struct bt_hci_cmd_hdr *hdr;
@@ -305,6 +342,29 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 	return 0;
 }
 
+/**
+ * @p cmd does not move ownership. The reference is cloned.
+ *
+ * @param cmd [borrow]
+ */
+static void bt_hci_cmd_send_async(struct net_buf *cmd, struct k_sem *on_rsp_avail)
+{
+	__ASSERT_NO_MSG(bt_buf_get_type(cmd) == BT_BUF_CMD);
+
+	cmd(cmd)->sync = on_rsp_avail;
+	net_buf_put(&bt_dev.cmd_tx_queue, net_buf_ref(cmd));
+}
+
+/**
+ * Ownership of @p buf is always lost, even when returning
+ * non-zero.
+ *
+ * When returning success and @p rsp is non-null, it is given
+ * ownership. If @p buf was given, this is the same buffer.
+ *
+ * @param buf [move]
+ * @param rsp [out,move]
+ */
 int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp)
 {
@@ -322,9 +382,7 @@ int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 	LOG_DBG("buf %p opcode 0x%04x len %u", buf, opcode, buf->len);
 
 	k_sem_init(&sync_sem, 0, 1);
-	cmd(buf)->sync = &sync_sem;
-
-	net_buf_put(&bt_dev.cmd_tx_queue, net_buf_ref(buf));
+	bt_hci_cmd_send_async(buf, &sync_sem);
 
 	err = k_sem_take(&sync_sem, HCI_CMD_TIMEOUT);
 	BT_ASSERT_MSG(err == 0, "command opcode 0x%04x timeout with err %d", opcode, err);
@@ -332,7 +390,6 @@ int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 	status = cmd(buf)->status;
 	if (status) {
 		LOG_WRN("opcode 0x%04x status 0x%02x", opcode, status);
-		net_buf_unref(buf);
 
 		switch (status) {
 		case BT_HCI_ERR_CONN_LIMIT_EXCEEDED:
@@ -2815,8 +2872,22 @@ void bt_hci_tx_cmd_req(void)
 void bt_dev_rl_tx_cmd_gen(struct net_buf *cmd_buf);
 static void gen_cmd(void)
 {
+	int err;
+	struct net_buf *buf;
+
+	buf = bt_hci_cmd_create2();
+
+	if (!buf) {
+		/* Go back to polling and try again later. */
+		return;
+	}
+
 	k_poll_signal_reset(&cmd_gen_sig);
-	bt_dev_rl_tx_cmd_gen(cmd_gen_buf);
+
+	bt_dev_rl_tx_cmd_gen(buf);
+
+	err = bt_hci_cmd_send(cmd(buf)->opcode, buf);
+	__ASSERT_NO_MSG(!err);
 }
 
 static int cmd_gen_ev_get(struct k_poll_event *event)
@@ -2828,13 +2899,12 @@ static int cmd_gen_ev_get(struct k_poll_event *event)
 
 	if (!signaled) {
 		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
-			K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &cmd_gen_sig, BT_EVENT_CMD_GEN);
-		return 1;
-	}
-
-	if (!cmd_gen_buf) {
+			K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &cmd_gen_sig,
+			BT_EVENT_REFRESH);
+	} else {
 		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
-			K_POLL_TYPE_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &hci_cmd_pool.free, BT_EVENT_CMD_GEN);
+			K_POLL_TYPE_DATA_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &hci_cmd_pool.free,
+			BT_EVENT_CMD_GEN);
 	}
 
 	return 1;
@@ -2881,11 +2951,13 @@ static void process_events(struct k_poll_event *ev, int count)
 	for (; count; ev++, count--) {
 		LOG_DBG("ev->state %u", ev->state);
 
+		if (ev->tag == BT_EVENT_CMD_GEN) {
+			gen_cmd();
+			continue;
+		}
+
 		switch (ev->state) {
 		case K_POLL_STATE_SIGNALED:
-			if (ev->tag == BT_EVENT_CMD_GEN) {
-				gen_cmd();
-			}
 			break;
 		case K_POLL_STATE_SEM_AVAILABLE:
 			/* After this fn is exec'd, `bt_conn_prepare_events()`

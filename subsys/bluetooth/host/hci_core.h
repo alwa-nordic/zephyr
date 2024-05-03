@@ -22,6 +22,8 @@
 
 /* k_poll event tags */
 enum {
+	/** Nothing to handle yet. Just update the poll list. */
+	BT_EVENT_REFRESH,
 	BT_EVENT_CMD_TX,
 	BT_EVENT_CMD_GEN,
 	BT_EVENT_CONN_TX_QUEUE,

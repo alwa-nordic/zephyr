@@ -265,7 +265,7 @@ void bt_hci_cmd_set_hdr(struct net_buf *buf, uint16_t opcode, uint8_t param_len)
 	cmd(buf)->state = NULL;
 }
 
-struct net_buf *bt_hci_cmd_create2(void)
+struct net_buf *bt_hci_cmd_alloc(void)
 {
 	struct net_buf *buf;
 
@@ -2869,14 +2869,14 @@ void bt_hci_tx_cmd_req(void)
 	k_poll_signal_raise(&cmd_gen_sig, 0);
 }
 
-struct k_sem bt_hci_cmd_gen_sem;
+struct k_sem ncmd_gen_sem;
 void bt_dev_rl_tx_cmd_gen(struct net_buf *cmd_buf);
 static void gen_cmd(void)
 {
 	int err;
 	struct net_buf *buf;
 
-	buf = bt_hci_cmd_create2();
+	buf = bt_hci_cmd_alloc();
 
 	if (!buf) {
 		/* Go back to polling and try again later. */
@@ -2903,9 +2903,9 @@ static int cmd_gen_ev_get(struct k_poll_event *event)
 	 * have tag `BT_EVENT_CMD_GEN`.
 	 */
 
-	if (!k_sem_count_get(&bt_hci_cmd_gen_sem)) {
+	if (!k_sem_count_get(&ncmd_gen_sem)) {
 		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
-			K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &bt_hci_cmd_gen_sem,
+			K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &ncmd_gen_sem,
 			BT_EVENT_REFRESH);
 	} else if (!signaled) {
 		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
@@ -2960,6 +2960,10 @@ static void process_events(struct k_poll_event *ev, int count)
 
 	for (; count; ev++, count--) {
 		LOG_DBG("ev->state %u", ev->state);
+
+		if (ev->tag == BT_EVENT_REFRESH) {
+			continue;
+		}
 
 		if (ev->tag == BT_EVENT_CMD_GEN) {
 			gen_cmd();
@@ -3027,7 +3031,7 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 						BT_EVENT_CMD_TX),
 	};
 
-	k_sem_init(&bt_hci_cmd_gen_sem, 1, 1);
+	k_sem_init(&ncmd_gen_sem, 1, 1);
 
 	cmd_gen_buf = bt_hci_cmd_create(0, 0);
 

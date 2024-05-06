@@ -19,9 +19,7 @@ enum bt_dev_rl_read_lock_t {
 
 struct bt_dev_rl_add_async_t {
 	sys_snode_t __node;
-	const bt_addr_le_t *peer_id;
-	struct bt_irk *peer_irk;
-	struct bt_irk *local_irk;
+	struct bt_hci_cp_le_add_dev_to_rl *entry;
 };
 
 struct bt_dev_rl_del_async_t {
@@ -70,9 +68,9 @@ void bt_dev_rl_add_async(struct bt_dev_rl_add_async_t *op)
 int bt_dev_rl_add_sync(const bt_addr_le_t *peer_id, struct bt_irk *peer_irk, struct bt_irk *local_irk)
 {
 	struct bt_dev_rl_add_async_t op = {
-		.peer_id = peer_id,
-		.peer_irk = peer_irk,
-		.local_irk = local_irk,
+		.entry.peer_id = peer_id,
+		.entry.peer_irk = peer_irk,
+		.entry.local_irk = local_irk,
 	};
 
 	bt_dev_rl_add_async(&op);
@@ -115,16 +113,16 @@ int bt_adv_pause(struct net_buf *cmd_buf);
 
 int bt_dev_rl_gen_hci_cmd(struct net_buf *cmd_buf)
 {
+	if (!(bt_dev_rl_lock & BT_DEV_RL_LOCK_WRITE)) {
+		return -ECANCELED;
+	}
+
 	if (bt_dev_rl_lock & BT_DEV_RL_LOCK_ADV_HAS) {
 		return bt_adv_pause(cmd_buf);
 	}
 	/* And so on for scan and initiator */
 
-	if (bt_dev_rl_lock & BT_DEV_RL_LOCK_WRITE) {
-		return bt_dev_rl_dequeue_cmd(cmd_buf);
-	}
-
-	return -EAGAIN;
+	return bt_dev_rl_dequeue_cmd(cmd_buf);
 }
 
 // Signals:

@@ -582,3 +582,5 @@ void bt_hci_le_df_cte_req_failed(struct net_buf *buf);
 
 void bt_hci_le_per_adv_subevent_data_request(struct net_buf *buf);
 void bt_hci_le_per_adv_response_report(struct net_buf *buf);
+
+void bt_hci_cmd_set_hdr(struct net_buf *buf, uint16_t opcode, uint8_t param_len);

@@ -2869,6 +2869,7 @@ void bt_hci_tx_cmd_req(void)
 	k_poll_signal_raise(&cmd_gen_sig, 0);
 }
 
+struct k_sem bt_hci_cmd_gen_sem;
 void bt_dev_rl_tx_cmd_gen(struct net_buf *cmd_buf);
 static void gen_cmd(void)
 {
@@ -2897,7 +2898,16 @@ static int cmd_gen_ev_get(struct k_poll_event *event)
 
 	k_poll_signal_check(&cmd_gen_sig, &signaled, &signal_result);
 
-	if (!signaled) {
+	/* This is an anding of the conditions to wait for. The
+	 * order of these does not matter, but the last one must
+	 * have tag `BT_EVENT_CMD_GEN`.
+	 */
+
+	if (!k_sem_count_get(&bt_hci_cmd_gen_sem)) {
+		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
+			K_POLL_TYPE_SEM_AVAILABLE, K_POLL_MODE_NOTIFY_ONLY, &bt_hci_cmd_gen_sem,
+			BT_EVENT_REFRESH);
+	} else if (!signaled) {
 		*event = (struct k_poll_event)K_POLL_EVENT_STATIC_INITIALIZER(
 			K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &cmd_gen_sig,
 			BT_EVENT_REFRESH);
@@ -3016,6 +3026,8 @@ static void hci_tx_thread(void *p1, void *p2, void *p3)
 						&bt_dev.cmd_tx_queue,
 						BT_EVENT_CMD_TX),
 	};
+
+	k_sem_init(&bt_hci_cmd_gen_sem, 1, 1);
 
 	cmd_gen_buf = bt_hci_cmd_create(0, 0);
 

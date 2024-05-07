@@ -13,9 +13,9 @@
 #include "zephyr/sys/util.h"
 
 enum bt_dev_rl_read_lock_t {
-	BT_DEV_RL_LOCK_WRITE,
-	BT_DEV_RL_LOCK_ADV_HAS,
-	BT_DEV_RL_LOCK_ADV_WANT,
+	BT_DEV_RL_UPDATE_PENDING,
+	BT_DEV_RL_USER_ADV,
+	BT_DEV_RL_USER_ADV_REQ,
 };
 
 struct bt_dev_rl_add_async_t {
@@ -28,7 +28,7 @@ struct bt_dev_rl_del_async_t {
 	const bt_addr_le_t *peer_id;
 };
 
-atomic_t bt_dev_rl_lock;
+atomic_t bt_dev_rl_users;
 
 /* Short-locking mutex to protect both the signal and the
  * sys_slist, which has a thread-unsafe implementation.
@@ -65,11 +65,6 @@ struct bt_dev_rl_add_async_t *bt_dev_rl_ops_add_dequeue(void)
 }
 
 void bt_hci_cmd_gen_req(void);
-void bt_dev_rl_start_write() {
-	atomic_set_bit(&bt_dev_rl_lock, BT_DEV_RL_LOCK_WRITE);
-	bt_hci_cmd_gen_req();
-}
-
 void bt_dev_rl_add_async(struct bt_dev_rl_add_async_t *op)
 {
 	k_mutex_lock(&bt_dev_rl_mutex, K_FOREVER);
@@ -81,7 +76,8 @@ void bt_dev_rl_add_async(struct bt_dev_rl_add_async_t *op)
 	 */
 	k_poll_signal_reset(&bt_dev_rl_idle);
 
-	bt_dev_rl_start_write();
+	atomic_set_bit(&bt_dev_rl_users, BT_DEV_RL_UPDATE_PENDING);
+	bt_hci_cmd_gen_req();
 
 	k_mutex_unlock(&bt_dev_rl_mutex);
 }
@@ -124,20 +120,29 @@ int bt_dev_rl_dequeue_cmd(struct net_buf *buf)
 	return -EAGAIN;
 }
 
-int bt_adv_pause(struct net_buf *cmd_buf);
+bool bt_dev_rl_has_work(void)
+{
+	return true;
+}
+
+int bt_adv_rl_preempt(struct net_buf *cmd_buf);
+int bt_adv_rl_ready(struct net_buf *cmd_buf);
 
 int bt_dev_rl_gen_hci_cmd(struct net_buf *cmd_buf)
 {
-	if (!(bt_dev_rl_lock & BT_DEV_RL_LOCK_WRITE)) {
-		return -ECANCELED;
+	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_UPDATE_PENDING)) {
+		if (bt_dev_rl_users & BT_DEV_RL_USER_ADV) {
+			return bt_adv_rl_preempt(cmd_buf);
+		}
+
+		return bt_dev_rl_dequeue_cmd(cmd_buf);
 	}
 
-	if (bt_dev_rl_lock & BT_DEV_RL_LOCK_ADV_HAS) {
-		return bt_adv_pause(cmd_buf);
+	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_USER_ADV_REQ)) {
+		return bt_adv_rl_ready(cmd_buf);
 	}
-	/* And so on for scan and initiator */
 
-	return bt_dev_rl_dequeue_cmd(cmd_buf);
+	return -ECANCELED;
 }
 
 // Signals:

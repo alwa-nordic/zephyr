@@ -12,11 +12,12 @@
 #include "zephyr/sys/slist.h"
 #include "zephyr/sys/util.h"
 
-enum bt_dev_rl_read_lock_t {
-	BT_DEV_RL_ADD_PENDING,
-	BT_DEV_RL_DEL_PENDING,
-	BT_DEV_RL_USER_ADV,
-	BT_DEV_RL_USER_ADV_REQ,
+enum bt_dev_rl_user {
+	BT_DEV_RL_USER_RW_ASYNC_DEL,
+	BT_DEV_RL_USER_RW_ASYNC_ADD,
+	BT_DEV_RL_USER_RW_SMP,
+	BT_DEV_RL_USER_RO_ADV,
+	BT_DEV_RL_USER_RO_ADV_REQ,
 };
 
 struct bt_dev_rl_add_async_t {
@@ -92,7 +93,7 @@ void bt_dev_rl_add_async(struct bt_dev_rl_add_async_t *op)
 
 	sys_slist_append(&bt_dev_rl_ops_add, &op->__node);
 
-	atomic_set_bit(&bt_dev_rl_users, BT_DEV_RL_ADD_PENDING);
+	atomic_set_bit(&bt_dev_rl_users, BT_DEV_RL_USER_RW_ASYNC_ADD);
 	bt_hci_cmd_gen_req();
 
 	k_mutex_unlock(&bt_dev_rl_mutex);
@@ -158,19 +159,18 @@ typedef int buf_to_int_t(struct net_buf *cmd_buf);
 
 buf_to_int_t *bt_dev_rl_gen_hci_cmd_select(void)
 {
-	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_ADD_PENDING)) {
-		if (bt_dev_rl_users & BT_DEV_RL_USER_ADV) {
+	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_USER_RW_ASYNC_ADD)) {
+		if (bt_dev_rl_users & BT_DEV_RL_USER_RO_ADV) {
 			return bt_adv_rl_preempt;
 		}
 
 		return bt_dev_rl_dequeue_cmd;
 	}
 
-	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_USER_ADV_REQ)) {
+	if (atomic_test_bit(&bt_dev_rl_users, BT_DEV_RL_USER_RO_ADV_REQ)) {
 		return bt_adv_rl_ready;
 	}
 
-	k_poll_signal_raise(&bt_dev_rl_idle, 0);
 	return NULL;
 }
 
@@ -182,13 +182,16 @@ int bt_dev_rl_gen_hci_cmd(struct net_buf *cmd_buf)
 
 	next_gen = bt_dev_rl_gen_hci_cmd_select();
 
-	if (next_gen) {
-		k_mutex_unlock(&bt_dev_rl_mutex);
-		return next_gen(cmd_buf);
-
+	if (!next_gen) {
+		k_poll_signal_raise(&bt_dev_rl_idle, 0);
 	}
 
 	k_mutex_unlock(&bt_dev_rl_mutex);
+
+	if (next_gen) {
+		return next_gen(cmd_buf);
+
+	}
 
 	return -ECANCELED;
 }

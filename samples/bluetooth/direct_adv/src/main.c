@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/kernel.h>
+#include <zephyr/sys/atomic_builtin.h>
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <string.h>
@@ -79,6 +81,8 @@ static const struct bt_data ad[] = {
 	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
 };
 
+static K_SEM_DEFINE(adv_resource_freed, 0, 1);
+
 static void connected(struct bt_conn *conn, uint8_t err)
 {
 	if (err) {
@@ -86,6 +90,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	} else {
 		printk("Connected\n");
 	}
+
+	k_sem_give(&adv_resource_freed);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -93,9 +99,15 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("Disconnected (reason 0x%02x)\n", reason);
 }
 
+static void on_conn_recycled(void)
+{
+	k_sem_give(&adv_resource_freed);
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
-	.disconnected = disconnected
+	.disconnected = disconnected,
+	.recycled = on_conn_recycled,
 };
 
 static void copy_last_bonded_addr(const struct bt_bond_info *info, void *data)
@@ -103,10 +115,32 @@ static void copy_last_bonded_addr(const struct bt_bond_info *info, void *data)
 	bt_addr_le_copy(&bond_addr, &info->addr);
 }
 
-static void bt_ready(void)
+void pairing_complete(struct bt_conn *conn, bool bonded)
 {
-	int err;
+	printk("Pairing completed. Rebooting in 5 seconds...\n");
+
+	k_sleep(K_SECONDS(5));
+	sys_reboot(SYS_REBOOT_WARM);
+}
+
+static struct bt_conn_auth_info_cb bt_conn_auth_info = {
+	.pairing_complete = pairing_complete
+};
+
+int main(void)
+{
 	char addr[BT_ADDR_LE_STR_LEN];
+	int err;
+
+	k_sem_init(&adv_resource_freed, 0, 1);
+
+	err = bt_enable(NULL);
+	if (err) {
+		printk("Bluetooth init failed (err %d)\n", err);
+		return 0;
+	}
+
+	bt_conn_auth_info_cb_register(&bt_conn_auth_info);
 
 	printk("Bluetooth initialized\n");
 
@@ -127,44 +161,30 @@ static void bt_ready(void)
 		adv_param = *BT_LE_ADV_CONN_DIR_LOW_DUTY(&bond_addr);
 		adv_param.options |= BT_LE_ADV_OPT_DIR_ADDR_RPA;
 		err = bt_le_adv_start(&adv_param, NULL, 0, NULL, 0);
+
+		if (err) {
+			printk("Advertising failed to start (err %d)\n", err);
+		} else {
+			printk("Advertising successfully started\n");
+		}
+
+		while (1) {
+			k_sleep(K_FOREVER);
+		}
 	} else {
-		err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), NULL, 0);
+		while (1) {
+			err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), NULL, 0);
+
+			if (!err) {
+				printk("Advertising successfully started\n");
+			} else if (err != -EALREADY && err != -ENOMEM) {
+				printk("Advertising failed to start (err %d)\n", err);
+				return 0;
+			}
+
+			k_sem_take(&adv_resource_freed, K_FOREVER);
+		}
 	}
 
-	if (err) {
-		printk("Advertising failed to start (err %d)\n", err);
-	} else {
-		printk("Advertising successfully started\n");
-	}
-}
-
-void pairing_complete(struct bt_conn *conn, bool bonded)
-{
-	printk("Pairing completed. Rebooting in 5 seconds...\n");
-
-	k_sleep(K_SECONDS(5));
-	sys_reboot(SYS_REBOOT_WARM);
-}
-
-static struct bt_conn_auth_info_cb bt_conn_auth_info = {
-	.pairing_complete = pairing_complete
-};
-
-int main(void)
-{
-	int err;
-
-	err = bt_enable(NULL);
-	if (err) {
-		printk("Bluetooth init failed (err %d)\n", err);
-		return 0;
-	}
-
-	bt_ready();
-	bt_conn_auth_info_cb_register(&bt_conn_auth_info);
-
-	while (1) {
-		k_sleep(K_FOREVER);
-	}
 	return 0;
 }

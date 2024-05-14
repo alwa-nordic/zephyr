@@ -42,6 +42,8 @@ static const struct bt_data ad[] = {
 static const uint8_t ant_patterns[] = { 0x2, 0x0, 0x5, 0x6, 0x1, 0x4, 0xC, 0x9, 0xE, 0xD, 0x8 };
 #endif /* CONFIG_BT_DF_CTE_TX_AOD */
 
+static struct k_sem check_adv_start;
+
 static void enable_cte_response(struct bt_conn *conn)
 {
 	int err;
@@ -82,6 +84,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	}
 
 	enable_cte_response(conn);
+
+	k_sem_give(&check_adv_start);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -89,25 +93,16 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("Disconnected (reason 0x%02x)\n", reason);
 }
 
+static void on_conn_recycled(void)
+{
+	k_sem_give(&check_adv_start);
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
+	.recycled = on_conn_recycled,
 };
-
-static void bt_ready(void)
-{
-	int err;
-
-	printk("Bluetooth initialized\n");
-
-	err = bt_le_adv_start(BT_LE_ADV_CONN, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
-		printk("Advertising failed to start (err %d)\n", err);
-		return;
-	}
-
-	printk("Advertising successfully started\n");
-}
 
 int main(void)
 {
@@ -119,6 +114,20 @@ int main(void)
 		return 0;
 	}
 
-	bt_ready();
+	printk("Bluetooth initialized\n");
+
+	while (1) {
+		err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), NULL, 0);
+
+		if (!err) {
+			printk("Advertising successfully started\n");
+		} else if (err != -EALREADY && err != -ENOMEM) {
+			printk("Advertising failed to start (err %d)\n", err);
+			return 0;
+		}
+
+		k_sem_take(&check_adv_start, K_FOREVER);
+	}
+
 	return 0;
 }

@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "zephyr/kernel.h"
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <zephyr/sys/printk.h>
@@ -43,7 +44,7 @@ static K_THREAD_STACK_DEFINE(pwr_thread_stack, 512);
 static const int8_t txpower[DEVICE_BEACON_TXPOWER_NUM] = {4, 0, -3, -8,
 							  -15, -18, -23, -30};
 static const struct bt_le_adv_param *param =
-	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE,
+	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONNECTABLE | BT_LE_ADV_OPT_ONE_TIME,
 			0x0020, 0x0020, NULL);
 
 static void read_conn_rssi(uint16_t handle, int8_t *rssi)
@@ -194,9 +195,32 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	}
 }
 
+static K_SEM_DEFINE(wakeup_adv_starter, 0, 1);
+
+void process_adv_starter(void)
+{
+	int err;
+
+	err = k_sem_take(&wakeup_adv_starter, K_NO_WAIT);
+	if (!err) {
+		err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), NULL, 0);
+		if (!err) {
+			printk("Advertising successfully started\n");
+		} else if (err != -EALREADY && err != -ENOMEM) {
+			printk("Advertising failed to start (err %d)\n", err);
+		}
+	}
+}
+
+static void on_conn_recycled(void)
+{
+	k_sem_give(&wakeup_adv_starter);
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
+	.recycled = on_conn_recycled,
 };
 
 static void bt_ready(int err)
@@ -208,13 +232,7 @@ static void bt_ready(int err)
 
 	printk("Bluetooth initialized\n");
 
-	/* Start advertising */
-	err = bt_le_adv_start(param, ad, ARRAY_SIZE(ad),
-			      sd, ARRAY_SIZE(sd));
-	if (err) {
-		printk("Advertising failed to start (err %d)\n", err);
-		return;
-	}
+	(void)k_work_submit_to_queue(&app_work_queue, &app_adv_start);
 
 	printk("Dynamic Tx power Beacon started\n");
 }
@@ -313,6 +331,8 @@ int main(void)
 	k_thread_name_set(&pwr_thread_data, "DYN TX");
 
 	while (1) {
+		process_adv_starter();
+
 		hrs_notify();
 		k_sleep(K_SECONDS(2));
 	}

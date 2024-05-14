@@ -5818,6 +5818,25 @@ __syscall void k_poll_signal_check(struct k_poll_signal *sig,
 				   unsigned int *signaled, int *result);
 
 /**
+ * @brief Block until signaled.
+ *
+ * @note Unlike `k_sem_take`, `k_poll_signal_wait` will not
+ * automatically reset the signal. This is the essential
+ * difference between a semaphore initialized 1 with limit 1 and
+ * a signal.
+ *
+ * @param sig The signal object to poll
+ * @return @see k_poll
+ */
+static inline int k_poll_signal_wait(struct k_poll_signal *sig)
+{
+	struct k_poll_event ev = K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SIGNAL,
+								 K_POLL_MODE_NOTIFY_ONLY, sig, 0);
+
+	return k_poll(&ev, 1, K_FOREVER);
+}
+
+/**
  * @brief Signal a poll signal object.
  *
  * This routine makes ready a poll signal, which is basically a poll event of

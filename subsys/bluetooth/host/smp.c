@@ -2684,7 +2684,7 @@ static struct bt_smp *smp_chan_get(struct bt_conn *conn)
 	struct bt_l2cap_chan *chan;
 
 	if (atomic_test_bit(conn->flags, BT_CONN_BYPASS_SMP)) {
-		LOG_DBG("SMP has been disabled by used on conn %p", conn);
+		LOG_DBG("SMP has been disabled by user on conn %p", conn);
 		return NULL;
 	}
 

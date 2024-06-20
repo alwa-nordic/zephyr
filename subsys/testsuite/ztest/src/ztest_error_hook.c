@@ -51,6 +51,9 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 	k_tid_t curr_tid = k_current_get();
 	bool valid_fault = (curr_tid == valid_fault_tid) || fault_in_isr;
 
+	printk("currtid %p, valid_fault_tid %p, fault_in_isr %d\n",
+			curr_tid, valid_fault_tid, fault_in_isr);
+
 	printk("Caught system error -- reason %d %d\n", reason, valid_fault);
 
 	if (valid_fault) {

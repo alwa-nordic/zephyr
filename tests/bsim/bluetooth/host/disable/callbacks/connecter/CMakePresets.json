@@ -1,0 +1,37 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "bsim",
+            "binaryDir": "./build",
+            "cacheVariables": {
+                "BOARD": "nrf52_bsim"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "bsim",
+            "description": "",
+            "displayName": "",
+            "configurePreset": "bsim"
+        }
+    ],
+    "workflowPresets": [
+        {
+            "name": "bsim",
+            "description": "",
+            "displayName": "",
+            "steps": [
+                {
+                    "type": "configure",
+                    "name": "bsim"
+                },
+                {
+                    "type": "build",
+                    "name": "bsim"
+                }
+            ]
+        }
+    ]
+}

@@ -66,11 +66,6 @@ config BT_HCI_TX_STACK_SIZE
 config BT_HCI_TX_STACK_SIZE_WITH_PROMPT
 	bool "Override HCI Tx thread stack size"
 
-config BT_HCI_TX_PRIO
-	# Hidden option for Co-Operative Tx thread priority
-	int
-	default 7
-
 choice BT_RECV_CONTEXT
 	prompt "BT RX Thread Selection"
 	default BT_RECV_WORKQ_SYS if SOC_SERIES_NRF51X

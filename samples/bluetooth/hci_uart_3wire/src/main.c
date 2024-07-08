@@ -33,6 +33,8 @@
 #define LOG_MODULE_NAME hci_uart_3wire
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
+#define TX_PRIO K_PRIO_COOP(7)
+
 static K_KERNEL_STACK_DEFINE(tx_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
 static K_KERNEL_STACK_DEFINE(rx_stack, CONFIG_BT_RX_STACK_SIZE);
 
@@ -783,11 +785,8 @@ int main(void)
 
 	/* TX thread */
 	k_fifo_init(&h5.tx_queue);
-	k_thread_create(&tx_thread_data, tx_stack,
-			K_KERNEL_STACK_SIZEOF(tx_stack),
-			tx_thread, NULL, NULL, NULL,
-			K_PRIO_COOP(CONFIG_BT_HCI_TX_PRIO),
-			0, K_NO_WAIT);
+	k_thread_create(&tx_thread_data, tx_stack, K_KERNEL_STACK_SIZEOF(tx_stack), tx_thread, NULL,
+			NULL, NULL, TX_PRIO, 0, K_NO_WAIT);
 	k_thread_name_set(&tx_thread_data, "tx_thread");
 
 	k_fifo_init(&h5.rx_queue);

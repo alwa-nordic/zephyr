@@ -31,7 +31,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_driver);
 
-#define BT_H5_TX_PRIO 7
+#define BT_H5_TX_PRIO K_PRIO_COOP(7)
 
 #define DT_DRV_COMPAT zephyr_bt_hci_3wire_uart
 
@@ -754,10 +754,8 @@ static void h5_init(const struct device *dev)
 
 	/* TX thread */
 	k_fifo_init(&h5->tx_queue);
-	tid = k_thread_create(cfg->tx_thread, cfg->tx_stack, cfg->tx_stack_size,
-			      tx_thread, (void *)dev, NULL, NULL,
-			      K_PRIO_COOP(BT_H5_TX_PRIO),
-			      0, K_NO_WAIT);
+	tid = k_thread_create(cfg->tx_thread, cfg->tx_stack, cfg->tx_stack_size, tx_thread,
+			      (void *)dev, NULL, NULL, BT_H5_TX_PRIO, 0, K_NO_WAIT);
 	k_thread_name_set(tid, "tx_thread");
 
 	k_fifo_init(&h5->rx_queue);

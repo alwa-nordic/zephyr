@@ -106,8 +106,7 @@ config BT_MAX_CONN
 	default 2 if BT_MESH_GATT_CLIENT
 	default 1
 	help
-	  Maximum number of simultaneous Bluetooth connections
-	  supported.
+	  Maximum number of simultaneous Bluetooth ACL connections.
 
 config BT_CONN_TX
 	bool

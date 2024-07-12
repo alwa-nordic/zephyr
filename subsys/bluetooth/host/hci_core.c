@@ -7,7 +7,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "zephyr/bluetooth/hci_types.h"
 #include <zephyr/kernel.h>
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -228,55 +230,36 @@ static void handle_vs_event(uint8_t event, struct net_buf *buf,
 	/* Other possible errors are handled by handle_event_common function */
 }
 
-#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
-void bt_hci_host_num_completed_packets(struct net_buf *buf)
+bool bt_dev_is_acl_flow_control_enabled(void)
 {
+	/* We always enable ACL flow control if available in both the
+	 * host and controller.
+	 */
+	return IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL) &&
+	       BT_CMD_TEST(bt_dev.supported_commands, 10, 5);
+}
 
-	struct bt_hci_cp_host_num_completed_packets *cp;
-	uint16_t handle = acl(buf)->handle;
-	struct bt_hci_handle_count *hc;
+#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
+void acl_in_pool_destroy(struct net_buf *buf)
+{
 	struct bt_conn *conn;
-	uint8_t index = acl(buf)->index;
 
 	net_buf_destroy(buf);
 
 	/* Do nothing if controller to host flow control is not supported */
-	if (!BT_CMD_TEST(bt_dev.supported_commands, 10, 5)) {
+	if (!bt_dev_is_acl_flow_control_enabled()) {
 		return;
 	}
 
-	conn = bt_conn_lookup_index(index);
-	if (!conn) {
-		LOG_WRN("Unable to look up conn with index 0x%02x", index);
-		return;
-	}
-
-	if (conn->state != BT_CONN_CONNECTED &&
-	    conn->state != BT_CONN_DISCONNECTING) {
-		LOG_WRN("Not reporting packet for non-connected conn");
-		bt_conn_unref(conn);
-		return;
-	}
-
+	/* `acl(buf)->index` has an associated reference. Treat is as such. */
+	conn = bt_conn_from_acl_index(acl(buf)->index); /* Move ref */
+	acl(buf)->index = BT_CONN_INDEX_INVALID;
+	__ASSERT_NO_MSG(conn);
+	atomic_inc(&conn->acl_ack_outbox);
 	bt_conn_unref(conn);
 
-	LOG_DBG("Reporting completed packet for handle %u", handle);
-
-	buf = bt_hci_cmd_create(BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS,
-				sizeof(*cp) + sizeof(*hc));
-	if (!buf) {
-		LOG_ERR("Unable to allocate new HCI command");
-		return;
-	}
-
-	cp = net_buf_add(buf, sizeof(*cp));
-	cp->num_handles = sys_cpu_to_le16(1);
-
-	hc = net_buf_add(buf, sizeof(*hc));
-	hc->handle = sys_cpu_to_le16(handle);
-	hc->count  = sys_cpu_to_le16(1);
-
-	bt_hci_cmd_send(BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS, buf);
+	atomic_set_bit(bt_dev.flags, BT_DEV_WORK_ACL_DATA_ACK);
+	bt_tx_irq_raise();
 }
 #endif /* defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL) */
 
@@ -630,7 +613,7 @@ static void hci_acl(struct net_buf *buf)
 		return;
 	}
 
-	acl(buf)->index = bt_conn_index(conn);
+	acl(buf)->index = bt_conn_index(bt_conn_ref(conn));
 
 	bt_conn_recv(conn, buf, flags);
 	bt_conn_unref(conn);
@@ -4643,9 +4626,24 @@ static bool process_pending_cmd(k_timeout_t timeout)
 	return false;
 }
 
+bool process_acl_data_ack(void);
 static void tx_processor(struct k_work *item)
 {
 	LOG_DBG("TX process start");
+
+	/* Optimization: Don't bother with the whole runtime check
+	 * bt_dev_is_acl_flow_control_enabled().
+	 * BT_DEV_WORK_ACL_DATA_ACK will never be set in that case.
+	 */
+	if (IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL)) {
+		bool credit_used = process_acl_data_ack(/* One send credit */);
+
+		if (credit_used) {
+			bt_tx_irq_raise();
+			return;
+		}
+	}
+
 	if (process_pending_cmd(K_NO_WAIT)) {
 		/* If we processed a command, let the scheduler run before
 		 * processing another command (or data).

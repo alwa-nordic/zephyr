@@ -9,6 +9,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/sys/atomic_types.h>
 #include <zephyr/bluetooth/iso.h>
 
 typedef enum __packed {
@@ -194,6 +195,7 @@ struct acl_data {
 };
 
 struct bt_conn {
+	atomic_t acl_ack_outbox;
 	uint16_t			handle;
 	enum bt_conn_type	type;
 	uint8_t			role;
@@ -443,6 +445,7 @@ bool bt_conn_is_peer_addr_le(const struct bt_conn *conn, uint8_t id,
  */
 #define BT_CONN_INDEX_INVALID 0xff
 struct bt_conn *bt_conn_lookup_index(uint8_t index);
+struct bt_conn *bt_conn_from_acl_index(uint8_t acl_index);
 
 /* Look up a connection state. For BT_ADDR_LE_ANY, returns the first connection
  * with the specific state
@@ -555,3 +558,16 @@ void bt_conn_tx_processor(void);
  * - unref the conn when popping the conn from the slist
  */
 void bt_conn_data_ready(struct bt_conn *conn);
+
+/**
+ * @brief Send pending ACL data ACKs.
+ *
+ * Uses `bt_send` to send one Host Number Of Completed Packets
+ * packet to the Controller if needed.
+ *
+ * @retval false Nothing to do or unable to progress.
+ * @retval true Completed some item of work. It is guaranteed to
+ * return false at some point if called in a loop. I.e. The
+ * caller does not have to "remember" that this was called.
+ */
+bool process_acl_data_ack(void);

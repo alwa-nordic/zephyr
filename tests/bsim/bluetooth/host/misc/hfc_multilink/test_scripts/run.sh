@@ -22,10 +22,10 @@ cd ${BSIM_OUT_PATH}/bin
 
 Execute ./bs_2G4_phy_v1 -v=${verbosity_level} -s=${simulation_id} -D=4 -sim_length=${SIM_LEN_US} $@
 
-Execute "${dut_exe}" -v=${verbosity_level} -s=${simulation_id} -d=0 -rs=420 -testid=dut
-
 Execute "${tester_exe}" -s=${simulation_id} -d=1 -rs=100 -testid=tester
 Execute "${tester_exe}" -s=${simulation_id} -d=2 -rs=200 -testid=tester
 Execute "${tester_exe}" -s=${simulation_id} -d=3 -rs=300 -testid=tester
+
+gdb -ex run -ex quit --args "${dut_exe}" -v=${verbosity_level} -s=${simulation_id} -d=0 -rs=420 -testid=dut
 
 wait_for_background_jobs

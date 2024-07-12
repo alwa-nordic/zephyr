@@ -86,6 +86,12 @@ enum {
 	BT_DEV_INQUIRY,
 #endif /* CONFIG_BT_CLASSIC */
 
+	/**
+	Must be set if there is a pending Host Num Complete for any ACL connection.
+	May be spuriously set.
+	 */
+	BT_DEV_WORK_ACL_DATA_ACK,
+
 	/* Total number of flags - must be at the end of the enum */
 	BT_DEV_NUM_FLAGS,
 };
@@ -535,7 +541,7 @@ int bt_setup_public_id_addr(void);
 
 void bt_finalize_init(void);
 
-void bt_hci_host_num_completed_packets(struct net_buf *buf);
+void acl_in_pool_destroy(struct net_buf *buf);
 
 /* HCI event handlers */
 void bt_hci_pin_code_req(struct net_buf *buf);

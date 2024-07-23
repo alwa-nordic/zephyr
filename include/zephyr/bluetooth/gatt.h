@@ -165,21 +165,117 @@ typedef ssize_t (*bt_gatt_attr_write_func_t)(struct bt_conn *conn,
 					     const void *buf, uint16_t len,
 					     uint16_t offset, uint8_t flags);
 
-/** @brief GATT Attribute structure. */
+/** @brief GATT Attribute
+ *
+ *  This type primarily represents an ATT Attribute that may be
+ *  an entry in the local ATT database. The objects of this type
+ *  must be part of an array that forms a GATT service.
+ *
+ *  While the formed GATT service is registered with the local
+ *  GATT server, pointers to this type can typically be given to
+ *  GATT server APIs, like bt_gatt_notify().
+ *
+ *  @note This type is given as an argument to the
+ *  bt_gatt_discover() application callback, but it's not a
+ *  proper object of this type. The permissions, read() and
+ *  write() methods are not available, and it's unsound to pass
+ *  the pointer to GATT server APIs.
+ */
 struct bt_gatt_attr {
-	/** Attribute UUID */
-	const struct bt_uuid *uuid;
-	/** Attribute read callback */
-	bt_gatt_attr_read_func_t read;
-	/** Attribute write callback */
-	bt_gatt_attr_write_func_t write;
-	/** Attribute user data */
-	void *user_data;
-	/** Attribute handle */
-	uint16_t handle;
-	/** @brief Attribute permissions.
+	/** @brief Attribute Type, aka. "UUID"
 	 *
-	 * Will be 0 if returned from ``bt_gatt_discover()``.
+	 *  The Attribute Type determines the interface can be expected
+	 *  from the read() and write() methods and the possible
+	 *  permission configurations.
+	 *
+	 *  E.g. Attribute of type @ref BT_UUID_GATT_CPF will act as a
+	 *  GATT Characteristic Presentation Format descriptor as
+	 *  specified in Core Specification 3.G.3.3.3.5.
+	 *
+	 *  Anyone can define a new Attribute Type.
+	 */
+	const struct bt_uuid *uuid;
+
+	/** @brief Attribute Value read method
+	 *
+	 *  This is the generic interface to read from the Attribute
+	 *  Value of this object in on-air format.
+	 *
+	 *  If this is non-NULL, you may call it to read the value.
+	 *  Value is the Attribute Value
+	 *
+	 *  This function may safely assume the Attribute Permissions
+	 *  are satisfied for this read.
+	 *
+	 *  The read() and write() implementations can and often do have
+	 *  side effects besides reading and writing the value.
+	 *
+	 *  This function is primarily invoked by the GATT server when a
+	 *  remote GATT client performs a read, but it can also be
+	 *  invoked for a local read.
+	 *
+	 *  Must be NULL if the attribute is not readable.
+	 */
+	bt_gatt_attr_read_func_t read;
+
+	/** @brief Attribute Value write method
+	 *
+	 *  This is the generic interface to write to the Attribute
+	 *  Value of this object in on-air format.
+	 *
+	 *  This function may safely assume the Attribute Permissions
+	 *  are satisfied for this write.
+	 *
+	 *  The read() and write() implementations can and often do have
+	 *  side effects besides reading and writing the value.
+	 *
+	 *  This function is primarily invoked by the GATT server when a
+	 *  remote GATT client performs a write, but it can also be
+	 *  invoked for a local write.
+	 *
+	 *  Must be NULL if the attribute is not writable.
+	 */
+	bt_gatt_attr_write_func_t write;
+
+	/** @brief User data for the read() and write()
+	 *
+	 *  The meaning of this field varies and is not specified here.
+	 *
+	 *  @note Attributes may have the same Attribute Type but have
+	 *  different implementations, with incompatible user data.
+	 *  Attribute Type shall not be used as a marker.
+	 *
+	 *  @note Attributes in callbacks from bt_gatt_discover() have
+	 *  specified meanings for this field. See @ref
+	 *  bt_gatt_discover_func_t.
+	 */
+	void *user_data;
+
+	/** @brief Attribute Handle or zero
+	 *
+	 *  The meaning of this field varies and is not specified here.
+	 *  Some APIs use this field as input/output. It does not always
+	 *  contain the Attribute Handle.
+	 *
+	 *  @note If this object is registered in the local ATT server,
+	 *  the Attribute Handle is available trough
+	 *  bt_gatt_attr_get_handle(), not this field.
+	 *
+	 *  @note The bt_gatt_discover() callback is invoked with the
+	 *  discovered Attribute Handle provided here.
+	 */
+	uint16_t handle;
+
+	/** @brief Attribute Permissions
+	 *
+	 *  Bit field of @ref bt_gatt_perm.
+	 *
+	 *  The permissions are security requirements that must be
+	 *  satisfied before calling read() or write().
+	 *
+	 *  @note Attribute Permissions are not discovered by
+	 *  bt_gatt_discover(), so this field is always zero in its
+	 *  callback.
 	 */
 	uint16_t perm;
 };

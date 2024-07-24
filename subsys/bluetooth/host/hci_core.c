@@ -296,6 +296,12 @@ struct net_buf *bt_hci_cmd_create(uint16_t opcode, uint8_t param_len)
 
 int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 {
+	/* Host Num Complete packet should be given to `bt_send`
+	 * directly, since they are not subject to command flow control
+	 * and are asynchonous to other commands.
+	 */
+	__ASSERT_NO_MSG(opcode != BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS);
+
 	if (!buf) {
 		buf = bt_hci_cmd_create(opcode, 0);
 		if (!buf) {
@@ -304,21 +310,6 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 	}
 
 	LOG_DBG("opcode 0x%04x len %u", opcode, buf->len);
-
-	/* Host Number of Completed Packets can ignore the ncmd value
-	 * and does not generate any cmd complete/status events.
-	 */
-	if (opcode == BT_HCI_OP_HOST_NUM_COMPLETED_PACKETS) {
-		int err;
-
-		err = bt_send(buf);
-		if (err) {
-			LOG_ERR("Unable to send to driver (err %d)", err);
-			net_buf_unref(buf);
-		}
-
-		return err;
-	}
 
 	net_buf_put(&bt_dev.cmd_tx_queue, buf);
 	bt_tx_irq_raise();

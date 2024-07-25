@@ -25,7 +25,7 @@ static void bt_conn_trigger_acl_ack_processor(void)
 	bt_tx_irq_raise();
 }
 
-static bool bt_dev_is_acl_flow_control_enabled(void)
+static bool bt_hci_c2hfc_is_enabled(void)
 {
 	/* We always enable ACL flow control if available in both the
 	 * host and controller.
@@ -36,7 +36,7 @@ static bool bt_dev_is_acl_flow_control_enabled(void)
 
 void bt_hci_c2hfc_ack(struct bt_conn *conn)
 {
-	if (!bt_dev_is_acl_flow_control_enabled()) {
+	if (!bt_hci_c2hfc_is_enabled()) {
 		return;
 	}
 

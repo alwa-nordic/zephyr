@@ -40,7 +40,7 @@ void bt_hci_c2hfc_ack(struct bt_conn *conn)
 		return;
 	}
 
-	atomic_inc(&conn->acl_ack_outbox);
+	atomic_inc(&conn->hci_c2hfc_outbox);
 	bt_conn_trigger_acl_ack_processor();
 }
 
@@ -174,7 +174,7 @@ bool bt_hci_c2hfc_process_tx(void)
 			continue;
 		}
 
-		ack_count = atomic_get(&conn->acl_ack_outbox);
+		ack_count = atomic_get(&conn->hci_c2hfc_outbox);
 		if (!ack_count || conn->state != BT_CONN_CONNECTED) {
 			continue;
 		}
@@ -201,7 +201,7 @@ bool bt_hci_c2hfc_process_tx(void)
 			break;
 		}
 
-		atomic_sub(&conn->acl_ack_outbox, ack_count);
+		atomic_sub(&conn->hci_c2hfc_outbox, ack_count);
 	}
 
 	if (conn) {

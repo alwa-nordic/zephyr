@@ -195,7 +195,7 @@ struct acl_data {
 };
 
 struct bt_conn {
-	IF_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL, (atomic_t acl_ack_outbox;))
+	IF_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL, (atomic_t hci_c2hfc_outbox;))
 	uint16_t handle;
 	enum bt_conn_type type;
 	uint8_t role;

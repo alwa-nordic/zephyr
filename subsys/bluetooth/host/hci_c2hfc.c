@@ -12,22 +12,84 @@
 
 #include <zephyr/bluetooth/buf.h>
 #include <zephyr/bluetooth/hci_types.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/net/buf.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
 
+LOG_MODULE_REGISTER(bt_hci_c2hfc, CONFIG_BT_HCI_CORE_LOG_LEVEL);
 
-#define HOST_NUM_COMPLETE_EVT_SIZE_MAX                                                             \
-	BT_BUF_EVT_SIZE(sizeof(struct bt_hci_cp_host_num_completed_packets) +                      \
-			CONFIG_BT_MAX_CONN * sizeof(struct bt_hci_handle_count))
-
-void bt_conn_trigger_acl_ack_processor(void)
+static void bt_conn_trigger_acl_ack_processor(void)
 {
 	atomic_set_bit(bt_dev.flags, BT_DEV_WORK_ACL_DATA_ACK);
 	bt_tx_irq_raise();
 }
 
-static void host_flow_control_control_pool_free(struct net_buf *buf)
+static bool bt_dev_is_acl_flow_control_enabled(void)
+{
+	/* We always enable ACL flow control if available in both the
+	 * host and controller.
+	 */
+	return IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL) &&
+	       BT_CMD_TEST(bt_dev.supported_commands, 10, 5);
+}
+
+void bt_hci_c2hfc_ack(struct bt_conn *conn)
+{
+	if (!bt_dev_is_acl_flow_control_enabled()) {
+		return;
+	}
+
+	atomic_inc(&conn->acl_ack_outbox);
+	bt_conn_trigger_acl_ack_processor();
+}
+
+static int set_flow_control(void)
+{
+	struct bt_hci_cp_host_buffer_size *hbs;
+	struct net_buf *buf;
+	int err;
+
+	/* Check if host flow control is actually supported */
+	if (!BT_CMD_TEST(bt_dev.supported_commands, 10, 5)) {
+		LOG_WRN("Controller to host flow control not supported");
+		return 0;
+	}
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_HOST_BUFFER_SIZE, sizeof(*hbs));
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	hbs = net_buf_add(buf, sizeof(*hbs));
+	(void)memset(hbs, 0, sizeof(*hbs));
+	hbs->acl_mtu = sys_cpu_to_le16(CONFIG_BT_BUF_ACL_RX_SIZE);
+	hbs->acl_pkts = sys_cpu_to_le16(CONFIG_BT_BUF_ACL_RX_COUNT);
+
+	err = bt_hci_cmd_send_sync(BT_HCI_OP_HOST_BUFFER_SIZE, buf, NULL);
+	if (err) {
+		return err;
+	}
+
+	buf = bt_hci_cmd_create(BT_HCI_OP_SET_CTL_TO_HOST_FLOW, 1);
+	if (!buf) {
+		return -ENOBUFS;
+	}
+
+	net_buf_add_u8(buf, BT_HCI_CTL_TO_HOST_FLOW_ENABLE);
+	return bt_hci_cmd_send_sync(BT_HCI_OP_SET_CTL_TO_HOST_FLOW, buf, NULL);
+}
+
+int bt_hci_c2hfc_bt_init(void)
+{
+	if (IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL)) {
+		return set_flow_control();
+	}
+
+	return 0;
+}
+
+static void bt_hci_c2hfc_pool_destroy(struct net_buf *buf)
 {
 	net_buf_destroy(buf);
 
@@ -35,8 +97,12 @@ static void host_flow_control_control_pool_free(struct net_buf *buf)
 	bt_conn_trigger_acl_ack_processor();
 }
 
-NET_BUF_POOL_DEFINE(host_flow_control_control_pool, 1, HOST_NUM_COMPLETE_EVT_SIZE_MAX,
-		    sizeof(struct bt_buf_data), host_flow_control_control_pool_free);
+#define HOST_NUM_COMPLETE_EVT_SIZE_MAX                                                             \
+	BT_BUF_EVT_SIZE(sizeof(struct bt_hci_cp_host_num_completed_packets) +                      \
+			CONFIG_BT_MAX_CONN * sizeof(struct bt_hci_handle_count))
+
+NET_BUF_POOL_DEFINE(bt_hci_c2hfc_pool, 1, HOST_NUM_COMPLETE_EVT_SIZE_MAX,
+		    sizeof(struct bt_buf_data), bt_hci_c2hfc_pool_destroy);
 
 static struct net_buf *acl_ack_cmd_new(void)
 {
@@ -44,7 +110,7 @@ static struct net_buf *acl_ack_cmd_new(void)
 	struct bt_hci_cmd_hdr *cmd_hdr;
 	struct bt_hci_cp_host_num_completed_packets *cp;
 
-	buf = net_buf_alloc(&host_flow_control_control_pool, K_NO_WAIT);
+	buf = net_buf_alloc(&bt_hci_c2hfc_pool, K_NO_WAIT);
 	if (!buf) {
 		return NULL;
 	}
@@ -86,18 +152,7 @@ static int acl_ack_cmd_append(struct net_buf *buf, uint16_t handle, uint16_t ack
 	return 0;
 }
 
-static void bt_conn_lookup_index_exchange(struct bt_conn **connp, uint8_t index)
-{
-	__ASSERT_NO_MSG(connp);
-
-	if (*connp) {
-		bt_conn_unref(*connp);
-	}
-
-	*connp = bt_conn_lookup_index(index);
-}
-
-bool process_acl_data_ack(void)
+bool bt_hci_c2hfc_process_tx(void)
 {
 	int err;
 	struct net_buf *buf = NULL;
@@ -110,7 +165,11 @@ bool process_acl_data_ack(void)
 	for (uint8_t i = 0; i < CONFIG_BT_MAX_CONN; i++) {
 		uint16_t ack_count;
 
-		bt_conn_lookup_index_exchange(&conn, i);
+		if (conn) {
+			bt_conn_unref(conn);
+		}
+
+		conn = bt_conn_lookup_index(i);
 		if (!conn) {
 			continue;
 		}
@@ -135,13 +194,14 @@ bool process_acl_data_ack(void)
 
 		err = acl_ack_cmd_append(buf, conn->handle, ack_count);
 
-		if (!err) {
-			atomic_sub(&conn->acl_ack_outbox, ack_count);
-		} else {
+		if (err) {
 			__ASSERT_NO_MSG(err == -ENOMEM);
-			/* We have filled up the buf but there is more. */
+			/* We have filled up the packet but there is more. */
 			bt_conn_trigger_acl_ack_processor();
+			break;
 		}
+
+		atomic_sub(&conn->acl_ack_outbox, ack_count);
 	}
 
 	if (conn) {

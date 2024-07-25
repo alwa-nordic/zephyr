@@ -570,4 +570,4 @@ void bt_conn_data_ready(struct bt_conn *conn);
  * return false at some point if called in a loop. I.e. The
  * caller does not have to "remember" that this was called.
  */
-bool process_acl_data_ack(void);
+bool bt_hci_c2hfc_process_tx(void);

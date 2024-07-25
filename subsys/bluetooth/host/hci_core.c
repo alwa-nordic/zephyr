@@ -51,6 +51,7 @@
 
 #include "addr_internal.h"
 #include "conn_internal.h"
+#include "hci_c2hfc.h"
 #include "iso_internal.h"
 #include "l2cap_internal.h"
 #include "gatt_internal.h"
@@ -230,36 +231,20 @@ static void handle_vs_event(uint8_t event, struct net_buf *buf,
 	/* Other possible errors are handled by handle_event_common function */
 }
 
-bool bt_dev_is_acl_flow_control_enabled(void)
-{
-	/* We always enable ACL flow control if available in both the
-	 * host and controller.
-	 */
-	return IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL) &&
-	       BT_CMD_TEST(bt_dev.supported_commands, 10, 5);
-}
-
 #if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
 void acl_in_pool_destroy(struct net_buf *buf)
 {
 	struct bt_conn *conn;
 
-	net_buf_destroy(buf);
-
-	/* Do nothing if controller to host flow control is not supported */
-	if (!bt_dev_is_acl_flow_control_enabled()) {
-		return;
-	}
-
 	/* `acl(buf)->index` has an associated reference. Treat is as such. */
 	conn = bt_conn_from_acl_index(acl(buf)->index); /* Move ref */
-	acl(buf)->index = BT_CONN_INDEX_INVALID;
 	__ASSERT_NO_MSG(conn);
-	atomic_inc(&conn->acl_ack_outbox);
-	bt_conn_unref(conn);
+	acl(buf)->index = BT_CONN_INDEX_INVALID;
 
-	atomic_set_bit(bt_dev.flags, BT_DEV_WORK_ACL_DATA_ACK);
-	bt_tx_irq_raise();
+	net_buf_destroy(buf);
+
+	bt_hci_c2hfc_ack(conn);
+	bt_conn_unref(conn);
 }
 #endif /* defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL) */
 
@@ -1956,45 +1941,6 @@ static void le_conn_update_complete(struct net_buf *buf)
 	bt_conn_unref(conn);
 }
 
-#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
-static int set_flow_control(void)
-{
-	struct bt_hci_cp_host_buffer_size *hbs;
-	struct net_buf *buf;
-	int err;
-
-	/* Check if host flow control is actually supported */
-	if (!BT_CMD_TEST(bt_dev.supported_commands, 10, 5)) {
-		LOG_WRN("Controller to host flow control not supported");
-		return 0;
-	}
-
-	buf = bt_hci_cmd_create(BT_HCI_OP_HOST_BUFFER_SIZE,
-				sizeof(*hbs));
-	if (!buf) {
-		return -ENOBUFS;
-	}
-
-	hbs = net_buf_add(buf, sizeof(*hbs));
-	(void)memset(hbs, 0, sizeof(*hbs));
-	hbs->acl_mtu = sys_cpu_to_le16(CONFIG_BT_BUF_ACL_RX_SIZE);
-	hbs->acl_pkts = sys_cpu_to_le16(CONFIG_BT_BUF_ACL_RX_COUNT);
-
-	err = bt_hci_cmd_send_sync(BT_HCI_OP_HOST_BUFFER_SIZE, buf, NULL);
-	if (err) {
-		return err;
-	}
-
-	buf = bt_hci_cmd_create(BT_HCI_OP_SET_CTL_TO_HOST_FLOW, 1);
-	if (!buf) {
-		return -ENOBUFS;
-	}
-
-	net_buf_add_u8(buf, BT_HCI_CTL_TO_HOST_FLOW_ENABLE);
-	return bt_hci_cmd_send_sync(BT_HCI_OP_SET_CTL_TO_HOST_FLOW, buf, NULL);
-}
-#endif /* CONFIG_BT_HCI_ACL_FLOW_CONTROL */
-
 static void unpair(uint8_t id, const bt_addr_le_t *addr)
 {
 	struct bt_keys *keys = NULL;
@@ -3195,12 +3141,12 @@ static int common_init(void)
 		}
 	}
 
-#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
-	err = set_flow_control();
-	if (err) {
-		return err;
+	if (IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL)) {
+		err = bt_hci_c2hfc_bt_init();
+		if (err) {
+			return err;
+		}
 	}
-#endif /* CONFIG_BT_HCI_ACL_FLOW_CONTROL */
 
 	return 0;
 }
@@ -4617,7 +4563,6 @@ static bool process_pending_cmd(k_timeout_t timeout)
 	return false;
 }
 
-bool process_acl_data_ack(void);
 static void tx_processor(struct k_work *item)
 {
 	LOG_DBG("TX process start");
@@ -4627,7 +4572,7 @@ static void tx_processor(struct k_work *item)
 	 * BT_DEV_WORK_ACL_DATA_ACK will never be set in that case.
 	 */
 	if (IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL)) {
-		bool credit_used = process_acl_data_ack(/* One send credit */);
+		bool credit_used = bt_hci_c2hfc_process_tx(/* One send credit */);
 
 		if (credit_used) {
 			bt_tx_irq_raise();

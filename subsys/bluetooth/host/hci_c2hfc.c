@@ -104,7 +104,7 @@ static void bt_hci_c2hfc_pool_destroy(struct net_buf *buf)
 NET_BUF_POOL_DEFINE(bt_hci_c2hfc_pool, 1, HOST_NUM_COMPLETE_EVT_SIZE_MAX,
 		    sizeof(struct bt_buf_data), bt_hci_c2hfc_pool_destroy);
 
-static struct net_buf *acl_ack_cmd_new(void)
+static struct net_buf *hci_c2hfc_cmd_new(void)
 {
 	struct net_buf *buf;
 	struct bt_hci_cmd_hdr *cmd_hdr;
@@ -181,7 +181,7 @@ bool bt_hci_c2hfc_process_tx(void)
 
 		/* Allocate once we know there is something to send. */
 		if (!buf) {
-			buf = acl_ack_cmd_new();
+			buf = hci_c2hfc_cmd_new();
 		}
 
 		if (!buf) {

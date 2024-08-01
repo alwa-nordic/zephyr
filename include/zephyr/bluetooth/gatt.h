@@ -243,7 +243,8 @@ struct bt_gatt_attr {
 	 *
 	 *  @note Attributes may have the same Attribute Type but have
 	 *  different implementations, with incompatible user data.
-	 *  Attribute Type shall not be used as a marker.
+	 *  Attribute Type alone must not be used to infer the type of
+	 *  the user data.
 	 *
 	 *  @note Attributes in callbacks from bt_gatt_discover() have
 	 *  specified meanings for this field. See @ref

@@ -149,7 +149,22 @@ typedef ssize_t (*bt_gatt_attr_read_func_t)(struct bt_conn *conn,
 					    uint16_t offset);
 
 /** @typedef bt_gatt_attr_write_func_t
- *  @brief Attribute write callback
+ *  @brief Attribute Value write implementation
+ *
+ *  This function may safely assume the Attribute Permissions
+ *  are satisfied for this write. Callers are responsible for
+ *  this.
+ *
+ *  Attribute Value write implementations can and often do have
+ *  side effects besides potentially storing the value. E.g.
+ *  togging an LED. This behavior specified by the Attribute
+ *  Type.
+ *
+ *  @note This function is invoked by the GATT server when a
+ *  remote GATT client performs a write with the data from the
+ *  client. Any error return value from this function is sent to
+ *  the client as a response if the client requested a
+ *  response, otherwise it's simply discarded.
  *
  *  @param conn   The connection that is requesting to write
  *  @param attr   The attribute that's being written
@@ -221,19 +236,10 @@ struct bt_gatt_attr {
 	 *  This is the generic interface to write to the Attribute
 	 *  Value of this object in on-air format.
 	 *
-	 *  A readable attribute sets this to its read method implementation.
+	 *  When instantiating a new writeable Attribute, set this to
+	 *  the implementation of the write method.
 	 *
-	 *  See @ref bt_gatt_attr_write_func_t for expected behavior.
-	 *
-	 *  This function may safely assume the Attribute Permissions
-	 *  are satisfied for this write.
-	 *
-	 *  The read() and write() implementations can and often do have
-	 *  side effects besides reading and writing the value.
-	 *
-	 *  This function is primarily invoked by the GATT server when a
-	 *  remote GATT client performs a write, but it can also be
-	 *  invoked for a local write.
+	 *  See @ref bt_gatt_attr_write_func_t.
 	 *
 	 *  Must be NULL if the attribute is not writable.
 	 */

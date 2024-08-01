@@ -133,7 +133,8 @@ struct bt_gatt_attr;
  *  The callback can also be used locally to read the contents of the
  *  attribute in which case no connection will be set.
  *
- *  @param conn   The connection that is requesting to read
+ *  @param conn   The connection that is requesting to read. NULL if
+ *                local.
  *  @param attr   The attribute that's being read
  *  @param buf    Buffer to place the read result in
  *  @param len    Length of data to read
@@ -201,9 +202,6 @@ struct bt_gatt_attr {
 	 *  This is the generic interface to read from the Attribute
 	 *  Value of this object in on-air format.
 	 *
-	 *  If this is non-NULL, you may call it to read the value.
-	 *  Value is the Attribute Value
-	 *
 	 *  This function may safely assume the Attribute Permissions
 	 *  are satisfied for this read.
 	 *
@@ -211,8 +209,8 @@ struct bt_gatt_attr {
 	 *  side effects besides reading and writing the value.
 	 *
 	 *  This function is primarily invoked by the GATT server when a
-	 *  remote GATT client performs a read, but it can also be
-	 *  invoked for a local read.
+	 *  remote GATT client performs a read, but the read can be
+	 *  from a local source as well.
 	 *
 	 *  Must be NULL if the attribute is not readable.
 	 */
@@ -222,6 +220,10 @@ struct bt_gatt_attr {
 	 *
 	 *  This is the generic interface to write to the Attribute
 	 *  Value of this object in on-air format.
+	 *
+	 *  A readable attribute sets this to its read method implementation.
+	 *
+	 *  See @ref bt_gatt_attr_write_func_t for expected behavior.
 	 *
 	 *  This function may safely assume the Attribute Permissions
 	 *  are satisfied for this write.

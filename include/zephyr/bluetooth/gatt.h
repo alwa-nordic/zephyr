@@ -130,11 +130,26 @@ struct bt_gatt_attr;
 /** @typedef bt_gatt_attr_read_func_t
  *  @brief Attribute read callback
  *
- *  The callback can also be used locally to read the contents of the
- *  attribute in which case no connection will be set.
+ *  This type of function is meant to be an implementation of
+ *  the read method on @ref bt_gatt_attr object. It is invoked
+ *  with the parameter @p attr set to that object.
  *
- *  @param conn   The connection that is requesting to read. NULL if
- *                local.
+ *  The main purpose of this function is to handle read
+ *  operations from a remote GATT client. But the read method
+ *  can be invoked locally, possibly with @p conn set to NULL.
+ *
+ *  @note The GATT server will send any error code from this
+ *  method the GATT client in response to the read request.
+ *
+ *  This function may safely assume the Attribute Permissions
+ *  are satisfied for this read. Callers are responsible for
+ *  this.
+ *
+ *  The callback can also be used locally to read the contents
+ *  of the attribute in which case no connection will be set.
+ *
+ *  @param conn   The connection that is requesting to read.
+ *                NULL if local.
  *  @param attr   The attribute that's being read
  *  @param buf    Buffer to place the read result in
  *  @param len    Length of data to read
@@ -153,14 +168,14 @@ typedef ssize_t (*bt_gatt_attr_read_func_t)(struct bt_conn *conn,
  *
  *  This type of function is meant to be an implementation of
  *  the write method on @ref bt_gatt_attr object. It is invoked
- *  with the parameter  @p attr set to that object.
+ *  with the parameter @p attr set to that object.
  *
  *  The main purpose of this function is to handle write
  *  operations from a remote GATT client. But a write can also
- *  be initiated locally, in which case @p conn will be NULL.
+ *  be done locally, in which case @p conn will be NULL.
  *
  *  @note The GATT server will send any error code from this
- *  methods the GATT client in response to the write request,
+ *  method the GATT client in response to the write request,
  *  if the client requested a response.
  *
  *  This function may safely assume the Attribute Permissions
@@ -227,17 +242,13 @@ struct bt_gatt_attr {
 	 *  This is the generic interface to read from the Attribute
 	 *  Value of this object in on-air format.
 	 *
-	 *  This function may safely assume the Attribute Permissions
-	 *  are satisfied for this read.
-	 *
-	 *  The read() and write() implementations can and often do have
-	 *  side effects besides reading and writing the value.
-	 *
 	 *  This function is primarily invoked by the GATT server when a
 	 *  remote GATT client performs a read, but the read can be
 	 *  from a local source as well.
 	 *
 	 *  Must be NULL if the attribute is not readable.
+	 *
+	 *  See @ref bt_gatt_attr_read_func_t.
 	 */
 	bt_gatt_attr_read_func_t read;
 

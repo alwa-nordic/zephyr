@@ -151,20 +151,30 @@ typedef ssize_t (*bt_gatt_attr_read_func_t)(struct bt_conn *conn,
 /** @typedef bt_gatt_attr_write_func_t
  *  @brief Attribute Value write implementation
  *
+ *  This type of function is meant to be an implementation of
+ *  the write method on @ref bt_gatt_attr object. It is invoked
+ *  with the parameter  @p attr set to that object.
+ *
+ *  The main purpose of this function is to handle write
+ *  operations from a remote GATT client. But a write can also
+ *  be initiated locally, in which case @p conn will be NULL.
+ *
+ *  @note The GATT server will send any error code from this
+ *  methods the GATT client in response to the write request,
+ *  if the client requested a response.
+ *
  *  This function may safely assume the Attribute Permissions
  *  are satisfied for this write. Callers are responsible for
  *  this.
+ *
+ *  If @p conn is NULL and this is not sensible for this
+ *  implementation, it should return @ref
+ *  BT_ATT_ERR_NOT_SUPPORTED.
  *
  *  Attribute Value write implementations can and often do have
  *  side effects besides potentially storing the value. E.g.
  *  togging an LED. This behavior specified by the Attribute
  *  Type.
- *
- *  @note This function is invoked by the GATT server when a
- *  remote GATT client performs a write with the data from the
- *  client. Any error return value from this function is sent to
- *  the client as a response if the client requested a
- *  response, otherwise it's simply discarded.
  *
  *  @param conn   The connection that is requesting to write
  *  @param attr   The attribute that's being written
@@ -239,9 +249,9 @@ struct bt_gatt_attr {
 	 *  When instantiating a new writeable Attribute, set this to
 	 *  the implementation of the write method.
 	 *
-	 *  See @ref bt_gatt_attr_write_func_t.
-	 *
 	 *  Must be NULL if the attribute is not writable.
+	 *
+	 *  See @ref bt_gatt_attr_write_func_t.
 	 */
 	bt_gatt_attr_write_func_t write;
 

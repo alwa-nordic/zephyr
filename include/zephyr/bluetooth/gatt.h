@@ -166,13 +166,11 @@ typedef ssize_t (*bt_gatt_attr_read_func_t)(struct bt_conn *conn,
 /** @typedef bt_gatt_attr_write_func_t
  *  @brief Attribute Value write implementation
  *
- *  This type of function is meant to be an implementation of
- *  the write method on @ref bt_gatt_attr object. It is invoked
- *  with the parameter @p attr set to that object.
+ *  This is the type of the bt_gatt_attr.write() method.
  *
- *  The main purpose of this function is to handle write
- *  operations from a remote GATT client. But a write can also
- *  be done locally, in which case @p conn will be NULL.
+ *  The main purpose of this method is to handle write
+ *  operations from a remote GATT client. But, a write can also
+ *  be done locally, in which case @p conn may be NULL.
  *
  *  @note The GATT server will send any error code from this
  *  method the GATT client in response to the write request,
@@ -183,13 +181,16 @@ typedef ssize_t (*bt_gatt_attr_read_func_t)(struct bt_conn *conn,
  *  this.
  *
  *  If @p conn is NULL and this is not sensible for this
- *  implementation, it should return @ref
+ *  implementation, the implementation should return @ref
  *  BT_ATT_ERR_NOT_SUPPORTED.
+ *
+ *  If @p flags contains @ref BT_GATT_WRITE_FLAG_PREPARE, this
+ *  the call is a dry-run, which must not write, but may return
+ *  an error if the read write would have failed.
  *
  *  Attribute Value write implementations can and often do have
  *  side effects besides potentially storing the value. E.g.
- *  togging an LED. This behavior specified by the Attribute
- *  Type.
+ *  togging an LED.
  *
  *  @param conn   The connection that is requesting to write
  *  @param attr   The attribute that's being written
@@ -242,11 +243,12 @@ struct bt_gatt_attr {
 	 *  This is the generic interface to read from the Attribute
 	 *  Value of this object in on-air format.
 	 *
-	 *  This function is primarily invoked by the GATT server when a
-	 *  remote GATT client performs a read, but the read can be
-	 *  from a local source as well.
+	 *  Readable Attributes must implement this method.
 	 *
 	 *  Must be NULL if the attribute is not readable.
+	 *
+	 *  The behavior of this method is determined by the Attribute
+	 *  Type.
 	 *
 	 *  See @ref bt_gatt_attr_read_func_t.
 	 */
@@ -257,10 +259,12 @@ struct bt_gatt_attr {
 	 *  This is the generic interface to write to the Attribute
 	 *  Value of this object in on-air format.
 	 *
-	 *  When instantiating a new writeable Attribute, set this to
-	 *  the implementation of the write method.
+	 *  Writeable Attributes must implement this method.
 	 *
 	 *  Must be NULL if the attribute is not writable.
+	 *
+	 *  The behavior of this method is determined by the Attribute
+	 *  Type.
 	 *
 	 *  See @ref bt_gatt_attr_write_func_t.
 	 */

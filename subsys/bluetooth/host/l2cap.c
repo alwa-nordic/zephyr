@@ -2440,6 +2440,7 @@ static void l2cap_chan_le_recv_seg(struct bt_l2cap_le_chan *chan,
 {
 	uint16_t len;
 	uint16_t seg = 0U;
+	struct net_buf *sdu;
 
 	len = chan->_sdu->len;
 	if (len) {
@@ -2485,11 +2486,11 @@ static void l2cap_chan_le_recv_seg(struct bt_l2cap_le_chan *chan,
 		return;
 	}
 
-	buf = chan->_sdu;
+	sdu = chan->_sdu;
 	chan->_sdu = NULL;
 	chan->_sdu_len = 0U;
 
-	l2cap_chan_le_recv_sdu(chan, buf, seg);
+	l2cap_chan_le_recv_sdu(chan, sdu, seg);
 }
 
 #if defined(CONFIG_BT_L2CAP_SEG_RECV)

@@ -1,0 +1,14 @@
+{
+    "version": 6,
+    "configurePresets": [
+        {
+            "name": "bsim",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "BOARD": "nrf52_bsim",
+                "CONFIG_BUILD_OUTPUT_STRIP_PATHS": "n",
+                "CONFIG_BT_HCI_LOG_HEXDUMP": "y",
+            }
+        }
+    ]
+}

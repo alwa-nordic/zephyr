@@ -45,6 +45,8 @@ BT_GATT_SERVICE_DEFINE(test_gatt_service, BT_GATT_PRIMARY_SERVICE(test_service_u
 					      NULL),
 		       BT_GATT_CCC(ccc_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),);
 
+NET_BUF_POOL_DEFINE(my_cmd_pool, 1, 100, 100, NULL);
+
 /* This is the entrypoint for the DUT.
  *
  * This is executed by the `bst_test` framework provided by the zephyr bsim
@@ -109,6 +111,21 @@ void entrypoint_dut(void)
 	TEST_ASSERT(err == 0, "Can't enable Bluetooth (err %d)", err);
 
 	LOG_DBG("Bluetooth initialized");
+
+	struct k_sem ready;
+	k_sem_init(&ready, 0, 1);
+	struct net_buf *cmd = net_buf_alloc(&my_cmd_pool, K_NO_WAIT);
+	net_buf_add_le16(cmd, BT_HCI_OP_READ_LOCAL_FEATURES);
+	net_buf_add_u8(cmd, 0);
+	struct bt_hci_cmd_send_async_op op = {
+		.ready = &ready,
+		.cmd = cmd,
+		.opcode = BT_HCI_OP_READ_LOCAL_FEATURES,
+	};
+	err = bt_hci_cmd_send_async(&op);
+	__ASSERT_NO_MSG(!err);
+	k_sem_take(&ready, K_FOREVER);
+	LOG_HEXDUMP_ERR(op.cmd->data, op.cmd->len, "Local features");
 
 	/* Find the address of the peer. In our case, both devices are actually
 	 * the same executable (with the same config) but executed with

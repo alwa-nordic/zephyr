@@ -31,6 +31,15 @@
 extern "C" {
 #endif
 
+struct bt_hci_cmd_send_async_op {
+	void *fifo_node;
+	uint16_t opcode;
+	struct k_sem *ready;
+	struct net_buf *cmd;
+};
+
+int bt_hci_cmd_send_async(struct bt_hci_cmd_send_async_op *op);
+
 /**
  * @brief Generic Access Profile (GAP)
  * @defgroup bt_gap Generic Access Profile (GAP)

@@ -325,6 +325,8 @@ struct bt_dev_br {
 #define BT_DEV_VS_FEAT_MAX  1
 #define BT_DEV_VS_CMDS_MAX  2
 
+
+
 /* State tracking for the local Bluetooth controller */
 struct bt_dev {
 	/* Local Identity Address(es) */
@@ -396,12 +398,14 @@ struct bt_dev {
 
 	/* Last sent HCI command */
 	struct net_buf		*sent_cmd;
+	struct bt_hci_cmd_send_async_op *sent_cmd_async;
 
 	/* Queue for incoming HCI events & ACL data */
 	sys_slist_t rx_queue;
 
 	/* Queue for outgoing HCI commands */
 	struct k_fifo		cmd_tx_queue;
+	struct k_fifo		cmd_tx_queue_async;
 
 #if DT_HAS_CHOSEN(zephyr_bt_hci)
 	const struct device *hci;

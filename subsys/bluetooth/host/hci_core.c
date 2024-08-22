@@ -362,6 +362,29 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 	return 0;
 }
 
+int bt_hci_cmd_send_async(struct bt_hci_cmd_send_async_op *op)
+{
+	CHECKIF(op->cmd->len < sizeof(struct bt_hci_cmd_hdr)) {
+		LOG_ERR("Missing HCI command header");
+		return -EINVAL;
+	}
+
+	CHECKIF(sys_get_le16(&op->cmd->data[offsetof(struct bt_hci_cmd_hdr, param_len)]) !=
+		(op->cmd->len - sizeof(struct bt_hci_cmd_hdr))) {
+		LOG_ERR("Inconsistent HCI command length");
+		return -EINVAL;
+	}
+
+	/* Todo. Move to app. Eventually use H4 type header instead. */
+	bt_buf_set_type(op->cmd, BT_BUF_CMD);
+
+	LOG_DBG("async cmd queuing %p", op);
+	k_fifo_put(&bt_dev.cmd_tx_queue_async, op);
+	bt_tx_irq_raise();
+
+	return 0;
+}
+
 static bool process_pending_cmd(k_timeout_t timeout);
 int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 			 struct net_buf **rsp)
@@ -2471,6 +2494,32 @@ static void hci_reset_complete(struct net_buf *buf)
 	atomic_set(bt_dev.flags, flags);
 }
 
+static void hci_cmd_done_async(struct net_buf *buf, uint16_t opcode)
+{
+	struct bt_hci_cmd_send_async_op *op = bt_dev.sent_cmd_async;
+	bt_dev.sent_cmd_async = NULL;
+
+	__ASSERT_NO_MSG(buf);
+	__ASSERT_NO_MSG(bt_buf_get_type(op->cmd) == BT_BUF_CMD);
+	__ASSERT_NO_MSG(bt_buf_get_type(buf) == BT_BUF_EVT);
+
+	if (op->opcode != opcode) {
+		LOG_ERR("Bad HCI RX: OpCode 0x%04x completed instead of expected 0x%04x", opcode,
+			op->opcode);
+		k_oops();
+	}
+
+	/* Response data is to be delivered in the original command
+	 * buffer.
+	 */
+	net_buf_reset(op->cmd);
+	bt_buf_set_type(op->cmd, BT_BUF_EVT);
+	net_buf_add_mem(op->cmd, buf->data, buf->len);
+
+	LOG_DBG("async cmd ready %p", op);
+	k_sem_give(op->ready);
+}
+
 static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *evt_buf)
 {
 	/* Original command buffer. */
@@ -2479,6 +2528,8 @@ static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *evt_bu
 	LOG_DBG("opcode 0x%04x status 0x%02x %s buf %p", opcode,
 		status, bt_hci_err_to_str(status), evt_buf);
 
+
+	// TODO: Move to caller and give sem and kick tx processor.
 	/* Unsolicited cmd complete. This does not complete a command.
 	 * The controller can send these for effect of the `ncmd` field.
 	 */
@@ -2537,7 +2588,7 @@ static void hci_cmd_complete(struct net_buf *buf)
 	uint8_t status, ncmd;
 	uint16_t opcode;
 
-	evt = net_buf_pull_mem(buf, sizeof(*evt));
+	evt = (void *)buf->data;
 	ncmd = evt->ncmd;
 	opcode = sys_le16_to_cpu(evt->opcode);
 
@@ -2546,7 +2597,7 @@ static void hci_cmd_complete(struct net_buf *buf)
 	/* All command return parameters have a 1-byte status in the
 	 * beginning, so we can safely make this generalization.
 	 */
-	status = buf->data[0];
+	status = buf->data[sizeof(struct bt_hci_evt_cmd_complete)];
 
 	/* HOST_NUM_COMPLETED_PACKETS should not generate a response under normal operation.
 	 * The generation of this command ignores `ncmd_sem`, so should not be given here.
@@ -2557,7 +2608,14 @@ static void hci_cmd_complete(struct net_buf *buf)
 		return;
 	}
 
-	hci_cmd_done(opcode, status, buf);
+	if (bt_dev.sent_cmd_async) {
+		hci_cmd_done_async(buf, opcode);
+	} else {
+		bt_buf_set_type(buf, 0xff);
+		net_buf_pull(buf, sizeof(*evt));
+		hci_cmd_done(opcode, status, buf);
+	}
+
 
 	/* Allow next command to be sent */
 	if (ncmd) {
@@ -3047,6 +3105,31 @@ static void hci_event(struct net_buf *buf)
 	handle_event(hdr->evt, buf, normal_events, ARRAY_SIZE(normal_events));
 
 	net_buf_unref(buf);
+}
+
+static uint16_t cmd_buf_opcode(struct net_buf *cmd) {
+	return sys_get_le16((void *)cmd->data);
+}
+
+static void hci_core_process_async_cmd(void)
+{
+	int err;
+
+	__ASSERT_NO_MSG(!bt_dev.sent_cmd_async);
+
+	/* Get next command */
+	struct bt_hci_cmd_send_async_op *op = k_fifo_get(&bt_dev.cmd_tx_queue_async, K_NO_WAIT);
+	BT_ASSERT(op);
+	__ASSERT_NO_MSG(bt_buf_get_type(op->cmd) == BT_BUF_CMD);
+
+	LOG_DBG("Sending cmd 0x%04x (op %p) to driver", cmd_buf_opcode(op->cmd), op);
+
+	bt_dev.sent_cmd_async = op;
+	err = bt_send(net_buf_ref(op->cmd));
+	if (err) {
+		LOG_ERR("Unable to cmd driver (err %d)", err);
+		k_oops();
+	}
 }
 
 static void hci_core_send_cmd(void)
@@ -4381,6 +4464,7 @@ int bt_enable(bt_ready_cb_t cb)
 		k_sem_init(&bt_dev.ncmd_sem, 0, 1);
 	}
 	k_fifo_init(&bt_dev.cmd_tx_queue);
+	k_fifo_init(&bt_dev.cmd_tx_queue_async);
 
 #if defined(CONFIG_BT_RECV_WORKQ_BT)
 	/* RX thread */
@@ -4760,6 +4844,15 @@ static bool process_pending_cmd(k_timeout_t timeout)
 	if (!k_fifo_is_empty(&bt_dev.cmd_tx_queue)) {
 		if (k_sem_take(&bt_dev.ncmd_sem, timeout) == 0) {
 			hci_core_send_cmd();
+			return true;
+		}
+	}
+
+	if (!k_fifo_is_empty(&bt_dev.cmd_tx_queue_async)) {
+		LOG_DBG("Found async command todo");
+		if (k_sem_take(&bt_dev.ncmd_sem, timeout) == 0) {
+			LOG_DBG("Sending async command");
+			hci_core_process_async_cmd();
 			return true;
 		}
 	}

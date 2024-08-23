@@ -364,6 +364,16 @@ int bt_hci_cmd_send(uint16_t opcode, struct net_buf *buf)
 
 int bt_hci_cmd_send_async(struct bt_hci_cmd_send_async_op *op)
 {
+	CHECKIF(op->cmd->user_data_size < sizeof(struct bt_buf_data)) {
+		LOG_ERR("Insufficient user_data_size");
+		return -EINVAL;
+	}
+
+	CHECKIF(net_buf_headroom(op->cmd) < BT_BUF_RESERVE) {
+		LOG_ERR("Insufficient headroom");
+		return -EINVAL;
+	}
+
 	CHECKIF(op->cmd->len < sizeof(struct bt_hci_cmd_hdr)) {
 		LOG_ERR("Missing HCI command header");
 		return -EINVAL;
@@ -2496,22 +2506,13 @@ static void hci_reset_complete(struct net_buf *buf)
 
 static void hci_cmd_done_async(struct net_buf *buf, uint16_t opcode)
 {
-	struct bt_hci_cmd_send_async_op *op = bt_dev.sent_cmd_async;
+	struct bt_hci_cmd_send_async_op *op;
+
+	op = bt_dev.sent_cmd_async;
 	bt_dev.sent_cmd_async = NULL;
 
-	__ASSERT_NO_MSG(buf);
-	__ASSERT_NO_MSG(bt_buf_get_type(op->cmd) == BT_BUF_CMD);
 	__ASSERT_NO_MSG(bt_buf_get_type(buf) == BT_BUF_EVT);
 
-	if (op->opcode != opcode) {
-		LOG_ERR("Bad HCI RX: OpCode 0x%04x completed instead of expected 0x%04x", opcode,
-			op->opcode);
-		k_oops();
-	}
-
-	/* Response data is to be delivered in the original command
-	 * buffer.
-	 */
 	net_buf_reset(op->cmd);
 	bt_buf_set_type(op->cmd, BT_BUF_EVT);
 	net_buf_add_mem(op->cmd, buf->data, buf->len);

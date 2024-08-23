@@ -393,10 +393,16 @@ struct bt_dev {
 	struct bt_dev_br	br;
 #endif
 
-	/* Number of commands controller can accept */
+	/* Available if the controller is willing to accept a command.
+	 * The Controller uses the `ncmd` field of Command Complete and Command Status to inform us of this.
+	 */
 	struct k_sem		ncmd_sem;
 
-	/* Last sent HCI command */
+	/* The HCI command being given to the Controller.
+	 *
+	 * Only one command is given at a time. This means at most one of `sent_cmd` and `sent_cmd_async` are set.
+	 * The Host is waiting for a Command Status or Complete response, and will then clear this field.
+	 */
 	struct net_buf		*sent_cmd;
 	struct bt_hci_cmd_send_async_op *sent_cmd_async;
 

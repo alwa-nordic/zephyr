@@ -20,6 +20,8 @@
 
 /* local includes */
 #include "data.h"
+#include "zephyr/bluetooth/buf.h"
+#include "zephyr/net/buf.h"
 
 LOG_MODULE_REGISTER(dut, LOG_LEVEL_DBG);
 
@@ -44,6 +46,25 @@ BT_GATT_SERVICE_DEFINE(test_gatt_service, BT_GATT_PRIMARY_SERVICE(test_service_u
 					      BT_GATT_PERM_READ | BT_GATT_PERM_WRITE, NULL, NULL,
 					      NULL),
 		       BT_GATT_CCC(ccc_changed, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),);
+
+struct k_work_poll cmd_work;
+
+static struct k_sem ready;
+static struct bt_hci_cmd_send_async_op op = {
+	.ready = &ready,
+};
+
+static struct k_poll_event events[] = {
+	K_POLL_EVENT_STATIC_INITIALIZER(K_POLL_TYPE_SEM_AVAILABLE,
+					K_POLL_MODE_NOTIFY_ONLY,
+					&ready, 0),
+};
+
+void cmd_work_handler(struct k_work *work)
+{
+	LOG_HEXDUMP_ERR(op.cmd->data, op.cmd->len, "Local features");
+	net_buf_unref(op.cmd);
+}
 
 NET_BUF_POOL_DEFINE(my_cmd_pool, 1, 100, 100, NULL);
 
@@ -112,20 +133,16 @@ void entrypoint_dut(void)
 
 	LOG_DBG("Bluetooth initialized");
 
-	struct k_sem ready;
-	k_sem_init(&ready, 0, 1);
-	struct net_buf *cmd = net_buf_alloc(&my_cmd_pool, K_NO_WAIT);
-	net_buf_add_le16(cmd, BT_HCI_OP_READ_LOCAL_FEATURES);
-	net_buf_add_u8(cmd, 0);
-	struct bt_hci_cmd_send_async_op op = {
-		.ready = &ready,
-		.cmd = cmd,
-		.opcode = BT_HCI_OP_READ_LOCAL_FEATURES,
-	};
+	op.cmd = net_buf_alloc(&my_cmd_pool, K_NO_WAIT);
+	net_buf_reserve(op.cmd, BT_BUF_RESERVE);
+	net_buf_add_le16(op.cmd, BT_HCI_OP_READ_LOCAL_FEATURES);
+	net_buf_add_u8(op.cmd, 0);
+
+	k_sem_init(op.ready, 0, 1);
 	err = bt_hci_cmd_send_async(&op);
 	__ASSERT_NO_MSG(!err);
-	k_sem_take(&ready, K_FOREVER);
-	LOG_HEXDUMP_ERR(op.cmd->data, op.cmd->len, "Local features");
+	k_work_poll_init(&cmd_work, cmd_work_handler);
+	k_work_poll_submit(&cmd_work, events, ARRAY_SIZE(events), K_FOREVER);
 
 	/* Find the address of the peer. In our case, both devices are actually
 	 * the same executable (with the same config) but executed with

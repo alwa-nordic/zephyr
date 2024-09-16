@@ -1633,6 +1633,7 @@ void bt_hci_le_vs_df_connectionless_iq_report(struct net_buf *buf)
 #endif /* defined(CONFIG_BT_PER_ADV_SYNC) */
 #endif /* defined(CONFIG_BT_EXT_ADV) */
 
+/* TODO: Make non-blocking. Defer work. */
 void bt_hci_le_adv_report(struct net_buf *buf)
 {
 	uint8_t num_reports = net_buf_pull_u8(buf);

@@ -28,6 +28,7 @@
 #include <zephyr/bluetooth/l2cap.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/hci_vs.h>
+#include <zephyr/bluetooth/hci_types.h>
 #if DT_HAS_CHOSEN(zephyr_bt_hci)
 #include <zephyr/drivers/bluetooth.h>
 #else
@@ -2939,6 +2940,13 @@ static inline uint8_t bt_hci_evt_get_flags(uint8_t evt[static 3])
 	case BT_HCI_EVT_CMD_COMPLETE:
 	case BT_HCI_EVT_CMD_STATUS:
 		return BT_HCI_EVT_FLAG_RECV_PRIO;
+	case BT_HCI_EVT_LE_META_EVENT:
+		switch (evt[2]) {
+		case BT_HCI_EVT_LE_ADVERTISING_REPORT:
+			return BT_HCI_EVT_FLAG_RECV_PRIO;
+		default:
+			return BT_HCI_EVT_FLAG_RECV;
+		}
 	default:
 		return BT_HCI_EVT_FLAG_RECV;
 	}

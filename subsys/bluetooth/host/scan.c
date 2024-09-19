@@ -893,6 +893,8 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 
 			net_buf_reset(buf);
 
+			/* FIXME: do an HCI reset. Controller gone crazy at this point. */
+
 			if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
 				return;
 			}
@@ -907,6 +909,7 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 		}
 
 		if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
+			__ASSERT(0, "TODO: Put this on the WQ bro");
 			/* Legacy advertising reports are complete.
 			 * Create event immediately.
 			 */

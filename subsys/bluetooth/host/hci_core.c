@@ -4058,6 +4058,7 @@ static int bt_recv_unsafe(struct net_buf *buf)
 		struct bt_hci_evt_hdr *hdr = (void *)buf->data;
 		uint8_t evt_flags = bt_hci_evt_get_flags(hdr->evt);
 
+		/* TODO: process scan in prio */
 		if (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO) {
 			hci_event_prio(buf);
 		}

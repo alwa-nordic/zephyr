@@ -443,8 +443,10 @@ static inline struct net_buf *encode_node(struct node_rx_pdu *node_rx,
 	case HCI_CLASS_EVT_CONNECTION:
 	case HCI_CLASS_EVT_LLCP:
 		if (class == HCI_CLASS_EVT_DISCARDABLE) {
-			buf = bt_buf_get_evt(BT_HCI_EVT_UNKNOWN, true,
-					     K_NO_WAIT);
+			/* yeah. I don't know how to use the better one here. The event has not yet
+			 * been serialized from LL state.
+			 */
+			buf = bt_buf_get_evt(BT_HCI_EVT_UNKNOWN, true, K_NO_WAIT);
 		} else {
 			buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
 		}

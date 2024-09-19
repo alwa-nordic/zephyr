@@ -834,6 +834,16 @@ static void create_ext_adv_info(struct bt_hci_evt_le_ext_advertising_info const 
 	scan_info->adv_props = get_adv_props_extended(sys_le16_to_cpu(evt->evt_type));
 }
 
+static void start_discarding(void)
+{
+	if (ext_scan_buf) {
+		net_buf_unref(ext_scan_buf);
+		ext_scan_buf = NULL;
+	}
+
+	reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+}
+
 void bt_hci_le_adv_ext_report(struct net_buf *buf)
 {
 	uint8_t num_reports = net_buf_pull_u8(buf);
@@ -860,7 +870,7 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 			if (reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
 				reset_reassembling_advertiser();
 				if (ext_scan_buf == NULL) {
-					reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+					start_discarding();
 				}
 			}
 
@@ -891,7 +901,7 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 			 * assume we may have lost a partial adv report in the truncated
 			 * data.
 			 */
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+			start_discarding();
 
 			return;
 		}
@@ -945,7 +955,7 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 
 		if (ext_scan_buf == NULL) {
 			LOG_DBG("no reassembly buffer, discarding..");
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+			start_discarding();
 			goto cont;
 		}
 
@@ -953,7 +963,7 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 			/* The report does not fit in the reassemby buffer
 			 * Discard this and future reports from the advertiser.
 			 */
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+			start_discarding();
 		}
 
 		if (reassembling_advertiser.state == FRAG_ADV_DISCARDING) {

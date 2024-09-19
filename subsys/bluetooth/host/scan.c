@@ -834,6 +834,38 @@ static void create_ext_adv_info(struct bt_hci_evt_le_ext_advertising_info const 
 	scan_info->adv_props = get_adv_props_extended(sys_le16_to_cpu(evt->evt_type));
 }
 
+#if defined(CONFIG_BT_HTOP)
+static atomic_t dropped_adv_reports;
+static struct k_thread htop_thread;
+static K_THREAD_PINNED_STACK_DEFINE(htop_thread_stack, CONFIG_MAIN_STACK_SIZE);
+
+static void htop_thread_entry(void *p1, void *p2, void *p3)
+{
+	#define ever ;;
+
+	for (ever) {
+		int reports = atomic_clear(&dropped_adv_reports);
+
+		if (reports) {
+			LOG_INF("Dropped advertising reports: %d", reports);
+		}
+
+		k_sleep(K_SECONDS(1<<1UL));
+	}
+}
+
+static int sys_init_spawn_htop(void)
+{
+	k_thread_create(&htop_thread, htop_thread_stack,
+			K_THREAD_STACK_SIZEOF(htop_thread_stack), htop_thread_entry, NULL,
+			NULL, NULL, K_HIGHEST_THREAD_PRIO, 0, K_NO_WAIT);
+	k_thread_name_set(&htop_thread, "htop");
+	return 0;
+}
+
+SYS_INIT(sys_init_spawn_htop, POST_KERNEL, 64);
+#endif
+
 static void start_discarding(void)
 {
 	if (ext_scan_buf) {
@@ -842,6 +874,9 @@ static void start_discarding(void)
 	}
 
 	reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+#if defined(CONFIG_BT_HTOP)
+	atomic_inc(&dropped_adv_reports);
+#endif
 }
 
 void bt_hci_le_adv_ext_report(struct net_buf *buf)

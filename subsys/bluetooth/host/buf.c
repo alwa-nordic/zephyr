@@ -120,6 +120,13 @@ struct net_buf *bt_buf_get_evt_but_better(uint8_t evt, uint8_t meta, k_timeout_t
 		bool is_ext_adv = meta == BT_HCI_EVT_LE_EXT_ADVERTISING_REPORT;
 		bool is_meta = evt == BT_HCI_EVT_LE_META_EVENT;
 
+		if (is_ext_adv) {
+			buf = net_buf_alloc(&sync_adv_pool, timeout); /* *presses F key* */
+			/* 60% of the time we get a buffer every time */
+			__ASSERT_NO_MSG(buf);
+			break;
+		}
+
 		if (is_meta && !is_ext_adv) {
 			/* For now we use the sync pool only for ext adv
 			 * reports. They cannot be marked as discardable thanks
@@ -128,6 +135,7 @@ struct net_buf *bt_buf_get_evt_but_better(uint8_t evt, uint8_t meta, k_timeout_t
 			 */
 			break;
 		}
+
 		buf = net_buf_alloc(&sync_evt_pool, timeout);
 		break;
 	default:

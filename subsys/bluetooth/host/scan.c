@@ -879,11 +879,107 @@ static void start_discarding(void)
 #endif
 }
 
+static bool some_weird_shit(void)
+{
+	if (!atomic_test_bit(scan_state.scan_flags, BT_LE_SCAN_USER_EXPLICIT_SCAN)) {
+		/* The application has not requested explicit scan, so it is not expecting
+		 * advertising reports. Discard, and reset the reassembler if not inactive
+		 * This is done in the loop as this flag can change between each iteration,
+		 * and it is not uncommon that scanning is disabled in the callback called
+		 * from le_adv_recv
+		 */
+
+		if (reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
+			reset_reassembling_advertiser();
+			if (ext_scan_buf == NULL) {
+				start_discarding();
+			}
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+static void feed_reassembler(struct net_buf_simple const *buf)
+{
+	struct net_buf_simple reports;
+
+	net_buf_simple_clone(buf, &reports);
+	buf = NULL;
+
+	uint8_t num_reports = net_buf_simple_pull_u8(reports);
+
+	while (num_reports--) {
+		struct bt_hci_evt_le_ext_advertising_info *evt = net_buf_pull_mem(buf, sizeof(*evt));
+		uint16_t evt_type = sys_le16_to_cpu(evt->evt_type);
+		uint16_t data_status = BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS(evt_type);
+		bool is_report_complete = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE;
+		bool more_to_come = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
+
+		if (evt->length > buf->len) {
+			LOG_WRN("Adv report corrupted (wants %u out of %u)", evt->length, buf->len);
+
+			return;
+		}
+	}
+}
+
 void bt_hci_le_adv_ext_report(struct net_buf *buf)
 {
-	uint8_t num_reports = net_buf_pull_u8(buf);
+	/* - Read-onlies `buf`
+	 * - looks for fragments
+	 * - re-assembles into other pool
+	 * - schedules re-assembled events to async
+	 */
+	feed_reassembler(&buf->b);
 
-	LOG_DBG("Adv number of reports %u", num_reports);
+	if (not_in_danger() && has_completes(buf)) {
+		parse_and_process_later_only_complete_reports(net_buf_ref(buf));
+	}
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 	while (num_reports--) {
 		struct bt_hci_evt_le_ext_advertising_info *evt;
@@ -894,27 +990,13 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 		bool more_to_come;
 		bool is_new_advertiser;
 
-		if (!atomic_test_bit(scan_state.scan_flags, BT_LE_SCAN_USER_EXPLICIT_SCAN)) {
-			/* The application has not requested explicit scan, so it is not expecting
-			 * advertising reports. Discard, and reset the reassembler if not inactive
-			 * This is done in the loop as this flag can change between each iteration,
-			 * and it is not uncommon that scanning is disabled in the callback called
-			 * from le_adv_recv
-			 */
-
-			if (reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
-				reset_reassembling_advertiser();
-				if (ext_scan_buf == NULL) {
-					start_discarding();
-				}
-			}
-
-			break;
+		if (some_weird_shit()) {
+			return;
 		}
 
 		if (buf->len < sizeof(*evt)) {
 			LOG_ERR("Unexpected end of buffer");
-			break;
+			return;
 		}
 
 		evt = net_buf_pull_mem(buf, sizeof(*evt));
@@ -941,16 +1023,6 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 			start_discarding();
 
 			return;
-		}
-
-		if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
-			__ASSERT(0, "TODO: Put this on the WQ bro");
-			/* Legacy advertising reports are complete.
-			 * Create event immediately.
-			 */
-			create_ext_adv_info(evt, &scan_info);
-			le_adv_recv(&evt->addr, &scan_info, &buf->b, evt->length);
-			goto cont;
 		}
 
 		is_new_advertiser = reassembling_advertiser.state == FRAG_ADV_INACTIVE ||
@@ -1014,6 +1086,11 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 			goto cont;
 		}
 
+		if (is_report_complete) {
+			has_complete = true;
+			goto cont;
+		}
+
 		net_buf_add_mem(ext_scan_buf, buf->data, evt->length);
 		if (more_to_come) {
 			/* The controller will send additional reports to be reassembled */
@@ -1032,6 +1109,17 @@ void bt_hci_le_adv_ext_report(struct net_buf *buf)
 		reset_reassembling_advertiser();
 cont:
 		net_buf_pull(buf, evt->length);
+	}
+
+	if (pool_full) {
+		return;		/* on investment */
+	}
+
+	if (has_complete) {
+		/* reload.wav */
+		quickload(buf, state);
+
+		process_report_async_only_completes_discard_partials(net_buf_ref(buf));
 	}
 }
 

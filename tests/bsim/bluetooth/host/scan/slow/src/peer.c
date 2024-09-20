@@ -17,6 +17,10 @@ LOG_MODULE_REGISTER(peer, LOG_LEVEL_DBG);
 
 extern unsigned long runtime_log_level;
 
+static const struct bt_data ad[] = {
+	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
+};
+
 void entrypoint_peer(void)
 {
 	int err;
@@ -34,11 +38,15 @@ void entrypoint_peer(void)
 	struct bt_le_ext_adv *adv;
 
 	struct bt_le_adv_param adv_param = BT_LE_ADV_PARAM_INIT(
-		BT_LE_ADV_OPT_EXT_ADV, BT_GAP_ADV_FAST_INT_MIN_1, BT_GAP_ADV_FAST_INT_MAX_1, NULL);
+		0, BT_GAP_ADV_FAST_INT_MIN_1, BT_GAP_ADV_FAST_INT_MAX_1, NULL);
 
 	err = bt_le_ext_adv_create(&adv_param, NULL, &adv);
 	TEST_ASSERT(!err, "Failed to create advertising set: %d", err);
 	LOG_DBG("Created extended advertising set.");
+
+	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
+	TEST_ASSERT(!err, "Failed to set adv data: %d", err);
+	LOG_DBG("Set adv data.");
 
 	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
 	TEST_ASSERT(!err, "Failed to start extended advertising: %d", err);

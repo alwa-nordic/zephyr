@@ -34,6 +34,7 @@
 #include <zephyr/sys_clock.h>
 #include <zephyr/toolchain.h>
 
+#include "buf_internal.h"
 #include "common/assert.h"
 #include "host/buf_view.h"
 #include "host/hci_core.h"
@@ -51,15 +52,11 @@ LOG_MODULE_REGISTER(bt_iso, CONFIG_BT_ISO_LOG_LEVEL);
 #define iso_chan(_iso) ((_iso)->iso.chan);
 
 #if defined(CONFIG_BT_ISO_RX)
-static bt_iso_buf_rx_freed_cb_t buf_rx_freed_cb;
 
 static void iso_rx_buf_destroy(struct net_buf *buf)
 {
 	net_buf_destroy(buf);
-
-	if (buf_rx_freed_cb) {
-		buf_rx_freed_cb();
-	}
+	buf_rx_freed_notify(BT_BUF_ISO_IN_BIT);
 }
 
 NET_BUF_POOL_FIXED_DEFINE(iso_rx_pool, CONFIG_BT_ISO_RX_BUF_COUNT,
@@ -591,11 +588,6 @@ struct net_buf *bt_iso_get_rx(k_timeout_t timeout)
 	}
 
 	return buf;
-}
-
-void bt_iso_buf_rx_freed_cb_set(bt_iso_buf_rx_freed_cb_t cb)
-{
-	buf_rx_freed_cb = cb;
 }
 
 void bt_iso_recv(struct bt_conn *iso, struct net_buf *buf, uint8_t flags)

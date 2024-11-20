@@ -111,7 +111,13 @@ struct bt_buf_data {
 struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout);
 
 /** This enum defines types of incoming data buffer based on the `enum bt_buf_type` values in a form
- * of bitfields.
+ *  of bitfields.
+ *
+ *  @warning The ABI of this enum is not stable. The numerical
+ *  values may change without warning in the future.
+ *
+ *  TODO: Can't we assign bit-field values to bt_buf_type
+ *  members instead? Seven bits fit in an uint8_t.
  */
 enum bt_buf_type_bit {
 	/** HCI event buffer */
@@ -134,12 +140,32 @@ enum bt_buf_type_bit {
  */
 typedef void (*bt_buf_rx_freed_cb_t)(enum bt_buf_type_bit type_mask);
 
-/** Set the callback to notify about freed buffer in the incoming data pool.
+/** Get notifications when buffers are available from @ref bt_buf_rx_get.
  *
- *  @param cb Callback to notify about freed buffer in the incoming data pool. If NULL, the callback
- *            is disabled.
+ *  This keeps a reference to the callback.
+ *
+ *  @note The implementation currently only supports one
+ *  registered callback and it is reserved for the HCI driver.
+ *
+ *  @param cb Event handler to register.
+ *
+ *  @retval 0        If the handler was successfully registered.
+ *  @retval -ENOMEM  If a handler is already registered.
+ *  @retval -EINVAL  If @p cb is NULL.
  */
-void bt_buf_rx_freed_cb_set(bt_buf_rx_freed_cb_t cb);
+int bt_buf_rx_freed_cb_register(bt_buf_rx_freed_cb_t cb);
+
+/** Undo @ref bt_buf_rx_freed_cb_register.
+ *
+ *  This releases the reference taken by @ref bt_buf_rx_freed_cb_register.
+ *
+ *  @param cb Event handler to remove.
+ *
+ *  @retval 0        If the handler was successfully unregistered.
+ *  @retval -ENOENT  If the handler is not registered.
+ *  @retval -EINVAL  If @p cb is NULL.
+ */
+int bt_buf_rx_freed_cb_unregister(bt_buf_rx_freed_cb_t cb);
 
 /** Allocate a buffer for outgoing data
  *

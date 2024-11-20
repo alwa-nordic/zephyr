@@ -7,7 +7,10 @@
 
 #include <zephyr/bluetooth/buf.h>
 #include <zephyr/bluetooth/l2cap.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/check.h>
 
+#include "buf_internal.h"
 #include "buf_view.h"
 #include "hci_core.h"
 #include "conn_internal.h"
@@ -25,21 +28,30 @@ LOG_MODULE_REGISTER(bt_buf, CONFIG_BT_LOG_LEVEL);
  */
 #define SYNC_EVT_SIZE (BT_BUF_RESERVE + BT_HCI_EVT_HDR_SIZE + 255)
 
+/** This mutex must be held when accessing `buf_rx_freed_cb` or
+ *  borrowing from it.
+ */
+static K_MUTEX_DEFINE(buf_rx_freed_cb_mutex);
 static bt_buf_rx_freed_cb_t buf_rx_freed_cb;
 
-static void buf_rx_freed_notify(enum bt_buf_type_bit mask)
+void buf_rx_freed_notify(enum bt_buf_type_bit mask)
 {
+	k_mutex_lock(&buf_rx_freed_cb_mutex, K_FOREVER);
+
 	if (buf_rx_freed_cb) {
 		buf_rx_freed_cb(mask);
 	}
-}
 
-#if defined(CONFIG_BT_ISO_RX)
-static void iso_rx_freed_cb(void)
-{
-	buf_rx_freed_notify(BT_BUF_ISO_IN_BIT);
+	/* The unlock is after the cb returns because we are borrowing
+	 * the reference to cb while we are calling it.
+	 *
+	 * If we released the mutex first, the unregister function can
+	 * move out the cb reference while we are borrowing it. That can
+	 * result in a visible call to cb after the unregister function
+	 * has returned.
+	 */
+	k_mutex_unlock(&buf_rx_freed_cb_mutex);
 }
-#endif
 
 /* Pool for RX HCI buffers that are always freed by `bt_recv`
  * before it returns.
@@ -119,13 +131,44 @@ struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
 	return buf;
 }
 
-void bt_buf_rx_freed_cb_set(bt_buf_rx_freed_cb_t cb)
+int bt_buf_rx_freed_cb_register(bt_buf_rx_freed_cb_t cb)
 {
-	buf_rx_freed_cb = cb;
+	int err = 0;
 
-#if defined(CONFIG_BT_ISO_RX)
-	bt_iso_buf_rx_freed_cb_set(cb != NULL ? iso_rx_freed_cb : NULL);
-#endif
+	k_mutex_lock(&buf_rx_freed_cb_mutex, K_FOREVER);
+
+	CHECKIF(cb == NULL) {
+		err = -EINVAL;
+	} else {
+		if (buf_rx_freed_cb != NULL) {
+			err = -ENOMEM;
+		} else {
+			buf_rx_freed_cb = cb;
+		}
+	}
+
+	k_mutex_unlock(&buf_rx_freed_cb_mutex);
+	return err;
+}
+
+int bt_buf_rx_freed_cb_unregister(bt_buf_rx_freed_cb_t cb)
+{
+	int err = 0;
+
+	k_mutex_lock(&buf_rx_freed_cb_mutex, K_FOREVER);
+
+	CHECKIF(cb == NULL) {
+		err = -EINVAL;
+	} else {
+		if (buf_rx_freed_cb != cb) {
+			err = -ENOENT;
+		} else {
+			buf_rx_freed_cb = NULL;
+		}
+	}
+
+	k_mutex_unlock(&buf_rx_freed_cb_mutex);
+	return err;
 }
 
 struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable,

@@ -10,6 +10,7 @@
 #include <string.h>
 
 #include <zephyr/device.h>
+#include <zephyr/drivers/bluetooth.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
@@ -26,15 +27,28 @@
 
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/devicetree.h>
 
 LOG_MODULE_REGISTER(hci_ipc, CONFIG_BT_LOG_LEVEL);
 
+#if DT_HAS_CHOSEN(zephyr_bt_hci)
+#define BT_HCI_NODE   DT_CHOSEN(zephyr_bt_hci)
+#define BT_HCI_DEV    DEVICE_DT_GET(BT_HCI_NODE)
+#define BT_HCI_BUS    BT_DT_HCI_BUS_GET(BT_HCI_NODE)
+#define BT_HCI_NAME   BT_DT_HCI_NAME_GET(BT_HCI_NODE)
+#else
+/* The zephyr,bt-hci chosen property is mandatory, except for unit tests */
+BUILD_ASSERT(IS_ENABLED(CONFIG_ZTEST), "Missing DT chosen property for HCI");
+#define BT_HCI_DEV    NULL
+#define BT_HCI_BUS    0
+#define BT_HCI_NAME   ""
+#endif
+
+/* Undefined reference? Make sure the HCI driver is compiled in. */
+static const struct device *hci_dev = BT_HCI_DEV;
 static struct ipc_ept hci_ept;
 
-static K_THREAD_STACK_DEFINE(tx_thread_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
-static struct k_thread tx_thread_data;
-static K_FIFO_DEFINE(tx_queue);
-static K_SEM_DEFINE(ipc_bound_sem, 0, 1);
+static struct k_poll_signal ipc_bound_signal = K_POLL_SIGNAL_INITIALIZER(ipc_bound_signal);
 #if defined(CONFIG_BT_CTLR_ASSERT_HANDLER) || defined(CONFIG_BT_HCI_VS_FATAL_ERROR)
 /* A flag used to store information if the IPC endpoint has already been bound. The end point can't
  * be used before that happens.
@@ -42,128 +56,14 @@ static K_SEM_DEFINE(ipc_bound_sem, 0, 1);
 static bool ipc_ept_ready;
 #endif /* CONFIG_BT_CTLR_ASSERT_HANDLER || CONFIG_BT_HCI_VS_FATAL_ERROR */
 
-#define HCI_IPC_CMD 0x01
-#define HCI_IPC_ACL 0x02
-#define HCI_IPC_SCO 0x03
-#define HCI_IPC_EVT 0x04
-#define HCI_IPC_ISO 0x05
-
 #define HCI_FATAL_ERR_MSG true
 #define HCI_REGULAR_MSG false
 
-static struct net_buf *hci_ipc_cmd_recv(uint8_t *data, size_t remaining)
-{
-	struct bt_hci_cmd_hdr *hdr = (void *)data;
-	struct net_buf *buf;
-
-	if (remaining < sizeof(*hdr)) {
-		LOG_ERR("Not enough data for command header");
-		return NULL;
-	}
-
-	buf = bt_buf_get_tx(BT_BUF_CMD, K_NO_WAIT, hdr, sizeof(*hdr));
-	if (buf) {
-		data += sizeof(*hdr);
-		remaining -= sizeof(*hdr);
-	} else {
-		LOG_ERR("No available command buffers!");
-		return NULL;
-	}
-
-	if (remaining != hdr->param_len) {
-		LOG_ERR("Command payload length is not correct");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	if (remaining > net_buf_tailroom(buf)) {
-		LOG_ERR("Not enough space in buffer");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	LOG_DBG("len %u", hdr->param_len);
-	net_buf_add_mem(buf, data, remaining);
-
-	return buf;
-}
-
-static struct net_buf *hci_ipc_acl_recv(uint8_t *data, size_t remaining)
-{
-	struct bt_hci_acl_hdr *hdr = (void *)data;
-	struct net_buf *buf;
-
-	if (remaining < sizeof(*hdr)) {
-		LOG_ERR("Not enough data for ACL header");
-		return NULL;
-	}
-
-	buf = bt_buf_get_tx(BT_BUF_ACL_OUT, K_NO_WAIT, hdr, sizeof(*hdr));
-	if (buf) {
-		data += sizeof(*hdr);
-		remaining -= sizeof(*hdr);
-	} else {
-		LOG_ERR("No available ACL buffers!");
-		return NULL;
-	}
-
-	if (remaining != sys_le16_to_cpu(hdr->len)) {
-		LOG_ERR("ACL payload length is not correct");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	if (remaining > net_buf_tailroom(buf)) {
-		LOG_ERR("Not enough space in buffer");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	LOG_DBG("len %u", remaining);
-	net_buf_add_mem(buf, data, remaining);
-
-	return buf;
-}
-
-static struct net_buf *hci_ipc_iso_recv(uint8_t *data, size_t remaining)
-{
-	struct bt_hci_iso_hdr *hdr = (void *)data;
-	struct net_buf *buf;
-
-	if (remaining < sizeof(*hdr)) {
-		LOG_ERR("Not enough data for ISO header");
-		return NULL;
-	}
-
-	buf = bt_buf_get_tx(BT_BUF_ISO_OUT, K_NO_WAIT, hdr, sizeof(*hdr));
-	if (buf) {
-		data += sizeof(*hdr);
-		remaining -= sizeof(*hdr);
-	} else {
-		LOG_ERR("No available ISO buffers!");
-		return NULL;
-	}
-
-	if (remaining != bt_iso_hdr_len(sys_le16_to_cpu(hdr->len))) {
-		LOG_ERR("ISO payload length is not correct");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	if (remaining > net_buf_tailroom(buf)) {
-		LOG_ERR("Not enough space in buffer");
-		net_buf_unref(buf);
-		return NULL;
-	}
-
-	LOG_DBG("len %zu", remaining);
-	net_buf_add_mem(buf, data, remaining);
-
-	return buf;
-}
+NET_BUF_POOL_FIXED_DEFINE(tx_pool, 1, 0, sizeof(struct bt_buf_data), NULL);
 
 static void hci_ipc_rx(uint8_t *data, size_t len)
 {
+	int err;
 	uint8_t pkt_indicator;
 	struct net_buf *buf = NULL;
 	size_t remaining = len;
@@ -173,50 +73,14 @@ static void hci_ipc_rx(uint8_t *data, size_t len)
 	pkt_indicator = *data++;
 	remaining -= sizeof(pkt_indicator);
 
-	switch (pkt_indicator) {
-	case HCI_IPC_CMD:
-		buf = hci_ipc_cmd_recv(data, remaining);
-		break;
+	buf = net_buf_alloc_with_data(&tx_pool, data, remaining, K_NO_WAIT);
+	bt_buf_set_type(buf, bt_buf_h4_type_to_out_type(pkt_indicator));
 
-	case HCI_IPC_ACL:
-		buf = hci_ipc_acl_recv(data, remaining);
-		break;
+	err = bt_hci_send(hci_dev, buf);
 
-	case HCI_IPC_ISO:
-		buf = hci_ipc_iso_recv(data, remaining);
-		break;
-
-	default:
-		LOG_ERR("Unknown HCI type %u", pkt_indicator);
-		return;
-	}
-
-	if (buf) {
-		k_fifo_put(&tx_queue, buf);
-
-		LOG_HEXDUMP_DBG(buf->data, buf->len, "Final net buffer:");
-	}
-}
-
-static void tx_thread(void *p1, void *p2, void *p3)
-{
-	while (1) {
-		struct net_buf *buf;
-		int err;
-
-		/* Wait until a buffer is available */
-		buf = k_fifo_get(&tx_queue, K_FOREVER);
-		/* Pass buffer to the stack */
-		err = bt_send(buf);
-		if (err) {
-			LOG_ERR("Unable to send (err %d)", err);
-			net_buf_unref(buf);
-		}
-
-		/* Give other threads a chance to run if tx_queue keeps getting
-		 * new data all the time.
-		 */
-		k_yield();
+	if (err) {
+		LOG_ERR("Driver failed: %d", err);
+		k_oops();
 	}
 }
 
@@ -232,13 +96,13 @@ static void hci_ipc_send(struct net_buf *buf, bool is_fatal_err)
 
 	switch (bt_buf_get_type(buf)) {
 	case BT_BUF_ACL_IN:
-		pkt_indicator = HCI_IPC_ACL;
+		pkt_indicator = BT_HCI_H4_ACL;
 		break;
 	case BT_BUF_EVT:
-		pkt_indicator = HCI_IPC_EVT;
+		pkt_indicator = BT_HCI_H4_EVT;
 		break;
 	case BT_BUF_ISO_IN:
-		pkt_indicator = HCI_IPC_ISO;
+		pkt_indicator = BT_HCI_H4_ISO;
 		break;
 	default:
 		LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
@@ -362,10 +226,10 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *esf)
 
 static void hci_ept_bound(void *priv)
 {
-	k_sem_give(&ipc_bound_sem);
 #if defined(CONFIG_BT_CTLR_ASSERT_HANDLER) || defined(CONFIG_BT_HCI_VS_FATAL_ERROR)
 	ipc_ept_ready = true;
 #endif /* CONFIG_BT_CTLR_ASSERT_HANDLER || CONFIG_BT_HCI_VS_FATAL_ERROR */
+	k_poll_signal_raise(&ipc_bound_signal, 0);
 }
 
 static void hci_ept_recv(const void *data, size_t len, void *priv)
@@ -382,6 +246,49 @@ static struct ipc_ept_cfg hci_ept_cfg = {
 	},
 };
 
+int signal_wait(struct k_poll_signal *signal)
+{
+	struct k_poll_event evs[] = {
+		K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SIGNAL,
+					 K_POLL_MODE_NOTIFY_ONLY,
+					 signal),
+	};
+
+	return k_poll(evs, ARRAY_SIZE(evs), K_FOREVER);
+}
+
+int bt_hci_recv(const struct device *dev, struct net_buf *buf)
+{
+	signal_wait(&ipc_bound_signal);
+
+	hci_ipc_send(buf, HCI_FATAL_ERR_MSG);
+
+	return 0;
+}
+
+/* ZLL needs two buffers here to not hang.
+ *
+ * The second buffer is probably needed when ZLL allocates while
+ * holding up the IPC thread. This needs to be investigated
+ * further.
+ */
+NET_BUF_POOL_FIXED_DEFINE(rx_pool, 2, BT_BUF_RX_SIZE, sizeof(struct bt_buf_data), NULL);
+
+struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
+{
+	struct net_buf *buf;
+
+	buf = net_buf_alloc(&rx_pool, timeout);
+	bt_buf_set_type(buf, type);
+
+	return buf;
+}
+
+struct net_buf *bt_buf_get_evt(uint8_t evt, bool discardable, k_timeout_t timeout)
+{
+	return bt_buf_get_rx(BT_BUF_EVT, timeout);
+}
+
 int main(void)
 {
 	int err;
@@ -394,15 +301,11 @@ int main(void)
 	LOG_DBG("Start");
 
 	/* Enable the raw interface, this will in turn open the HCI driver */
-	bt_enable_raw(&rx_queue);
-
-	/* Spawn the TX thread and start feeding commands and data to the
-	 * controller
-	 */
-	k_thread_create(&tx_thread_data, tx_thread_stack,
-			K_THREAD_STACK_SIZEOF(tx_thread_stack), tx_thread,
-			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
-	k_thread_name_set(&tx_thread_data, "HCI ipc TX");
+	err = bt_hci_open(hci_dev, bt_hci_recv);
+	if (err) {
+		LOG_ERR("HCI driver open failed (%d)", err);
+		return err;
+	}
 
 	/* Initialize IPC service instance and register endpoint. */
 	err = ipc_service_open_instance(hci_ipc_instance);
@@ -415,13 +318,5 @@ int main(void)
 		LOG_ERR("Registering endpoint failed with %d", err);
 	}
 
-	k_sem_take(&ipc_bound_sem, K_FOREVER);
-
-	while (1) {
-		struct net_buf *buf;
-
-		buf = k_fifo_get(&rx_queue, K_FOREVER);
-		hci_ipc_send(buf, HCI_REGULAR_MSG);
-	}
 	return 0;
 }

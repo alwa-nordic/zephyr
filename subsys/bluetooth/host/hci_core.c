@@ -950,8 +950,10 @@ static uint8_t conn_handle_is_disconnected(uint16_t handle)
 	return 0;
 }
 
+static void rx_queue_put(struct net_buf *buf);
 static void hci_disconn_complete_prio(struct net_buf *buf)
 {
+	struct bt_hci_evt_hdr *hdr;
 	struct bt_hci_evt_disconn_complete *evt = (void *)buf->data;
 	uint16_t handle = sys_le16_to_cpu(evt->handle);
 	struct bt_conn *conn;
@@ -969,13 +971,28 @@ static void hci_disconn_complete_prio(struct net_buf *buf)
 		 * connection complete event.
 		 */
 		conn_handle_disconnected(handle, evt->reason);
-		return;
+	} else {
+		conn->err = evt->reason;
+
+		/* The conn module hooks into the Disconnect Complete HCI event. */
+		bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
+		bt_conn_unref(conn);
 	}
 
-	conn->err = evt->reason;
-
-	bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
-	bt_conn_unref(conn);
+	/* The rest of the work involved with handling this event must
+	 * be delayed until the ACL data and earlier events referencing
+	 * this connection have all their effects resolved.
+	 *
+	 * We don't track the above explicitly. Instead, this code knows
+	 * that all those events and data are put on the RX queue and
+	 * resolved one by one. So we put this event on the RX queue
+	 * like the other events, and we continue handling in
+	 * `hci_disconn_complete`.
+	 */
+	hdr = net_buf_push(buf, sizeof(*hdr));
+	hdr->evt = BT_HCI_EVT_DISCONN_COMPLETE;
+	hdr->len = sizeof(*evt);
+	rx_queue_put(net_buf_ref(buf));
 }
 
 static void hci_disconn_complete(struct net_buf *buf)
@@ -4064,11 +4081,8 @@ static const struct event_handler prio_events[] = {
 
 void hci_event_prio(struct net_buf *buf)
 {
-	struct net_buf_simple_state state;
 	struct bt_hci_evt_hdr *hdr;
 	uint8_t evt_flags;
-
-	net_buf_simple_save(&buf->b, &state);
 
 	if (buf->len < sizeof(*hdr)) {
 		LOG_ERR("Invalid HCI event size (%u)", buf->len);
@@ -4081,12 +4095,7 @@ void hci_event_prio(struct net_buf *buf)
 	BT_ASSERT(evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO);
 
 	handle_event(hdr->evt, buf, prio_events, ARRAY_SIZE(prio_events));
-
-	if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
-		net_buf_simple_restore(&buf->b, &state);
-	} else {
-		net_buf_unref(buf);
-	}
+	net_buf_unref(buf);
 }
 
 static void rx_queue_put(struct net_buf *buf)
@@ -4103,16 +4112,28 @@ static void rx_queue_put(struct net_buf *buf)
 	}
 }
 
+static bool bt_hci_prio_handler_exists(uint8_t evt)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(prio_events); i++) {
+		if (evt == prio_events[i].event) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static int bt_hci_recv_event(struct net_buf *buf)
 {
 	struct bt_hci_evt_hdr *hdr = (void *)buf->data;
-	uint8_t evt_flags = bt_hci_evt_get_flags(hdr->evt);
 
-	if (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO) {
+	if (bt_hci_prio_handler_exists(hdr->evt)) {
+		/* Handler exists. Lookup and run handler. */
 		hci_event_prio(buf);
-	}
-
-	if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
+	} else {
+		/* No prio handler exists. The default handler is to put the
+		 * event buffer on the RX queue.
+		 */
 		rx_queue_put(buf);
 	}
 

@@ -4122,6 +4122,22 @@ static void rx_queue_put(struct net_buf *buf)
 	}
 }
 
+static int bt_hci_recv_event(struct net_buf *buf)
+{
+	struct bt_hci_evt_hdr *hdr = (void *)buf->data;
+	uint8_t evt_flags = bt_hci_evt_get_flags(hdr->evt);
+
+	if (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO) {
+		hci_event_prio(buf);
+	}
+
+	if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
+		rx_queue_put(buf);
+	}
+
+	return 0;
+}
+
 static int bt_recv_unsafe(struct net_buf *buf)
 {
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
@@ -4135,20 +4151,7 @@ static int bt_recv_unsafe(struct net_buf *buf)
 		return 0;
 #endif /* BT_CONN */
 	case BT_BUF_EVT:
-	{
-		struct bt_hci_evt_hdr *hdr = (void *)buf->data;
-		uint8_t evt_flags = bt_hci_evt_get_flags(hdr->evt);
-
-		if (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO) {
-			hci_event_prio(buf);
-		}
-
-		if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
-			rx_queue_put(buf);
-		}
-
-		return 0;
-	}
+		return bt_hci_recv_event(buf);
 #if defined(CONFIG_BT_ISO)
 	case BT_BUF_ISO_IN:
 		rx_queue_put(buf);

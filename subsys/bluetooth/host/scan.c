@@ -55,6 +55,55 @@ static sys_slist_t scan_cbs = SYS_SLIST_STATIC_INIT(&scan_cbs);
 
 static struct scanner_state scan_state;
 
+/* This list contains scan data to be delivered to the application.
+ * To do zero-copy, these are bt_buf event buffers.
+ */
+static sys_slist_t scanner_event_queue;
+
+/*
+ * @p buf is moved
+ */
+void bt_scan_append_event(struct net_buf *buf)
+{
+	sys_slist_append(&scanner_event_queue, &buf->node);
+}
+
+#if 0
+void bt_scan_drop_oldest_adv_report(void)
+{
+	struct net_buf *buf;
+	struct net_buf *prev_buf;
+	struct net_buf *next_buf;
+
+	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&scanner_event_queue, buf, next_buf, node) {
+
+	uint8_t num_reports = net_buf_pull_u8(buf);
+
+	LOG_DBG("Adv number of reports %u", num_reports);
+
+		last_report_in_event = report[num_reports];
+		if (is_complete(last_report_in_event))
+		evt = net_buf_pull_mem(buf, sizeof(*evt));
+		evt_type = sys_le16_to_cpu(evt->evt_type);
+		data_status = BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS(evt_type);
+
+		is_report_complete = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE;
+		more_to_come = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
+	}
+
+		sys_slist_remove(&scanner_event_queue, NULL, &buf->node);
+		net_buf_unref(buf);
+		prev_buf = buf;
+		break;
+	}
+
+	buf = net_buf_slist_get(&scanner_event_queue);
+	if (buf) {
+		net_buf_unref(buf);
+	}
+}
+#endif
+
 #if defined(CONFIG_BT_EXT_ADV)
 /* A buffer used to reassemble advertisement data from the controller. */
 NET_BUF_SIMPLE_DEFINE(ext_scan_buf, CONFIG_BT_EXT_SCAN_BUF_SIZE);

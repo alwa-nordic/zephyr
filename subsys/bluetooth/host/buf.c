@@ -93,9 +93,42 @@ NET_BUF_POOL_FIXED_DEFINE(hci_rx_pool, BT_BUF_RX_COUNT, BT_BUF_RX_SIZE, sizeof(s
 			  hci_rx_pool_destroy);
 #endif /* CONFIG_BT_HCI_ACL_FLOW_CONTROL */
 
+#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
+#define EVT_POOL (&evt_pool)
+#define ACL_IN_POOL (&acl_in_pool)
+#else
+#define EVT_POOL (&hci_rx_pool)
+#define ACL_IN_POOL (&hci_rx_pool)
+#endif
+
+atomic_t evt_pool_waiting;
+
+static void bt_buf_try_reclaim_one(struct net_buf_pool *pool)
+{
+	// hci_core_drop_oldest_pending_adv_report();
+}
+
+static struct net_buf *bt_buf_rx_evict_droppable_alloc(struct net_buf_pool *pool, k_timeout_t timeout)
+{
+	struct net_buf *buf = NULL;
+
+	buf = net_buf_alloc(pool, K_NO_WAIT);
+	if (!buf) {
+		//lock(pool)
+		bt_buf_try_reclaim_one(pool);
+		buf = net_buf_alloc(pool, timeout);
+		if (!buf) {
+			bt_buf_cancel_reclaim_one(pool);
+		}
+		//unlock(pool)
+	}
+	buf = NULL;
+}
+
 struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
 {
 	struct net_buf *buf;
+	struct net_buf_pool *pool;
 
 	__ASSERT(type == BT_BUF_EVT || type == BT_BUF_ACL_IN ||
 		 type == BT_BUF_ISO_IN, "Invalid buffer type requested");
@@ -104,15 +137,16 @@ struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
 		return bt_iso_get_rx(timeout);
 	}
 
-#if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
+	/* Depending on configuration EVT_POOL and ACL_IN_POOL may be
+	 * the same pool or different.
+	 */
 	if (type == BT_BUF_EVT) {
-		buf = net_buf_alloc(&evt_pool, timeout);
+		pool = EVT_POOL;
 	} else {
-		buf = net_buf_alloc(&acl_in_pool, timeout);
+		pool = ACL_IN_POOL;
 	}
-#else
-	buf = net_buf_alloc(&hci_rx_pool, timeout);
-#endif
+
+	buf = bt_buf_rx_evict_droppable_alloc(pool, timeout);
 
 	if (buf) {
 		net_buf_reserve(buf, BT_BUF_RESERVE);

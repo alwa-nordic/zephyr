@@ -30,6 +30,7 @@
 
 #include "common/bt_str.h"
 #include "scan.h"
+#include "zephyr/sys/__assert.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -2459,4 +2460,18 @@ bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_para
 	}
 
 	return true;
+}
+
+static sys_slist_t bt_scan_pending_adv_reports;
+
+bool bt_scan_rx_work_pending(void)
+{
+	return !sys_slist_is_empty(&bt_scan_pending_adv_reports);
+}
+
+void bt_scan_rx_work(void)
+{
+	if (bt_scan_rx_work_pending()) {
+		bt_hci_core_trigger_rx_work();
+	}
 }

@@ -131,4 +131,15 @@ bool bt_le_explicit_scanner_running(void);
  * @return false If explicit scanner uses different parameters
  */
 bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_param *create_param);
+
+/**
+ * Check if the scan module needs bt_scan_rx_work() to be run.
+ */
+bool bt_scan_rx_work_pending(void);
+
+/**
+ * Deliver some advertising reports to the application. This function
+ * will use the current thread to invoke application callbacks.
+ */
+void bt_scan_rx_work(void);
 #endif /* defined SUBSYS_BLUETOOTH_HOST_SCAN_H_ */

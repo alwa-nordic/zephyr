@@ -9,6 +9,7 @@
 
 #include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/kernel.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
@@ -2744,6 +2745,8 @@ static void hci_vendor_event(struct net_buf *buf)
 	}
 }
 
+static const struct event_handler meta_events_prio[] = {};
+
 static const struct event_handler meta_events[] = {
 #if defined(CONFIG_BT_OBSERVER)
 	EVENT_HANDLER(BT_HCI_EVT_LE_ADVERTISING_REPORT, bt_hci_le_adv_report,
@@ -2909,6 +2912,54 @@ static const struct event_handler meta_events[] = {
 #endif /* CONFIG_BT_CHANNEL_SOUNDING */
 
 };
+
+static const struct event_handler *bt_hci_find_meta_event_prio_handler(uint8_t subevent)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(meta_events_prio); i++) {
+		if (meta_events_prio[i].event == subevent) {
+			return &meta_events_prio[i];
+		}
+	}
+
+	return NULL;
+}
+
+static void hci_le_meta_event_prio(struct net_buf *buf)
+{
+	struct bt_hci_evt_le_meta_event *evt;
+	const struct event_handler *handler;
+
+	evt = (void *)buf->data;
+
+	LOG_DBG("subevent 0x%02x", evt->subevent);
+	handler = bt_hci_find_meta_event_prio_handler(evt->subevent);
+
+	if (handler) {
+		__ASSERT_NO_MSG(false);
+		net_buf_pull(buf, sizeof(*evt));
+		handle_event(evt->subevent, buf, meta_events_prio, ARRAY_SIZE(meta_events_prio));
+	} else {
+		/* Default handler
+		 *
+		 * Encapsulate in an HCI event and put on RX queue to be handled
+		 * in order with the other events there.
+		 */
+
+		struct bt_hci_evt_hdr *hdr;
+		size_t meta_evt_len = buf->len;
+
+		hdr = net_buf_push(buf, sizeof(*hdr));
+
+		/* We are really just restoring what's already there. */
+		__ASSERT_NO_MSG(hdr->evt == BT_HCI_EVT_LE_META_EVENT);
+		__ASSERT_NO_MSG(hdr->len == meta_evt_len);
+
+		hdr->evt = BT_HCI_EVT_LE_META_EVENT;
+		hdr->len = meta_evt_len;
+
+		rx_queue_put(net_buf_ref(buf));
+	}
+}
 
 static void hci_le_meta_event(struct net_buf *buf)
 {
@@ -4042,6 +4093,8 @@ static const struct event_handler prio_events[] = {
 		      hci_num_completed_packets,
 		      sizeof(struct bt_hci_evt_num_completed_packets)),
 #endif /* CONFIG_BT_CONN_TX */
+	EVENT_HANDLER(BT_HCI_EVT_LE_META_EVENT, hci_le_meta_event_prio,
+		      sizeof(struct bt_hci_evt_le_meta_event)),
 };
 
 void hci_event_prio(struct net_buf *buf)

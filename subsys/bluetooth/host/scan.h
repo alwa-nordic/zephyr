@@ -142,4 +142,6 @@ bool bt_scan_rx_work_pending(void);
  * will use the current thread to invoke application callbacks.
  */
 void bt_scan_rx_work(void);
+
+void bt_scan_append_ext_adv_report(struct net_buf *buf);
 #endif /* defined SUBSYS_BLUETOOTH_HOST_SCAN_H_ */

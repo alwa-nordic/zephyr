@@ -2745,7 +2745,38 @@ static void hci_vendor_event(struct net_buf *buf)
 	}
 }
 
-static const struct event_handler meta_events_prio[] = {};
+static void bt_hci_le_adv_ext_report_prio(struct net_buf *buf)
+{
+	/* Encapsulate in LE Meta Event and Event and put on RX queue. */
+
+	struct bt_hci_evt_hdr *evt;
+	struct bt_hci_evt_le_meta_event *meta_evt;
+	size_t meta_evt_len;
+
+	meta_evt = net_buf_push(buf, sizeof(*meta_evt));
+
+	/* We are really just restoring what's already there. */
+	__ASSERT_NO_MSG(meta_evt->subevent == BT_HCI_EVT_LE_EXT_ADVERTISING_REPORT);
+
+	meta_evt->subevent = BT_HCI_EVT_LE_EXT_ADVERTISING_REPORT;
+	meta_evt_len = buf->len;
+
+	evt = net_buf_push(buf, sizeof(*evt));
+
+	/* We are really just restoring what's already there. */
+	__ASSERT_NO_MSG(evt->evt == BT_HCI_EVT_LE_META_EVENT);
+	__ASSERT_NO_MSG(evt->len == meta_evt_len);
+
+	evt->evt = BT_HCI_EVT_LE_META_EVENT;
+	evt->len = meta_evt_len;
+
+	rx_queue_put(net_buf_ref(buf));
+}
+
+static const struct event_handler meta_events_prio[] = {
+	EVENT_HANDLER(BT_HCI_EVT_LE_EXT_ADVERTISING_REPORT, bt_hci_le_adv_ext_report_prio,
+		      sizeof(struct bt_hci_evt_le_ext_advertising_report)),
+};
 
 static const struct event_handler meta_events[] = {
 #if defined(CONFIG_BT_OBSERVER)
@@ -2935,7 +2966,6 @@ static void hci_le_meta_event_prio(struct net_buf *buf)
 	handler = bt_hci_find_meta_event_prio_handler(evt->subevent);
 
 	if (handler) {
-		__ASSERT_NO_MSG(false);
 		net_buf_pull(buf, sizeof(*evt));
 		handle_event(evt->subevent, buf, meta_events_prio, ARRAY_SIZE(meta_events_prio));
 	} else {

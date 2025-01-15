@@ -30,6 +30,7 @@
 
 #include "common/bt_str.h"
 #include "scan.h"
+#include "zephyr/net_buf.h"
 #include "zephyr/sys/__assert.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
@@ -2464,6 +2465,12 @@ bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_para
 
 static sys_slist_t bt_scan_pending_adv_reports;
 
+void bt_scan_append_adv_report(struct net_buf *buf)
+{
+	net_buf_slist_put(&bt_scan_pending_adv_reports, net_buf_ref(buf));
+	bt_hci_core_trigger_rx_work();
+}
+
 bool bt_scan_rx_work_pending(void)
 {
 	return !sys_slist_is_empty(&bt_scan_pending_adv_reports);
@@ -2471,6 +2478,13 @@ bool bt_scan_rx_work_pending(void)
 
 void bt_scan_rx_work(void)
 {
+	struct net_buf *buf;
+
+	buf = net_buf_slist_get(&bt_scan_pending_adv_reports);
+
+	bt_hci_le_adv_ext_report(buf);
+	net_buf_unref(buf);
+
 	if (bt_scan_rx_work_pending()) {
 		bt_hci_core_trigger_rx_work();
 	}

@@ -6,6 +6,7 @@
  */
 #include <sys/types.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <string.h>
 
@@ -32,6 +33,7 @@
 #include "scan.h"
 #include "zephyr/net_buf.h"
 #include "zephyr/sys/__assert.h"
+#include "zephyr/sys/slist.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -2463,7 +2465,98 @@ bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_para
 	return true;
 }
 
+static K_MUTEX_DEFINE(bt_scan_reassembler_mutex);
+static size_t bt_scan_head_remaining_report_count;
+static size_t be_scan_head_next_subreport_offset;
+/**
+ * Appending to this list using net_buf_slist_put() is thread-safe.
+ *
+ * Removing from this list is allowed only when holding the bt_scan_reassembler_mutex.
+ */
 static sys_slist_t bt_scan_pending_adv_reports;
+
+/*
+ * This function will process subreports until a complete
+ * report has been found or reassembled or the report queue is empty.
+ *
+ * Any number of threads may invoke this function, but it's intended for
+ * two. One thread is the normal thread to invoke this function, with
+ * cb_enabled.
+ *
+ * When cb_enabled is true, the application callbacks are run. Otherwise
+ * the report is dropped.
+ *
+ * blocking if cb_enabled is true
+ * invokes at most one application callback if cb_enabled is true
+ * non-blocking if cb_enabled is false
+ * thread-safe
+ */
+static void bt_scan_process_one(bool cb_enabled)
+{
+	struct net_buf *buf = NULL;
+
+	uint8_t *subreport;
+
+	k_mutex_lock(&bt_scan_reassembler_mutex, K_FOREVER);
+
+	/* While we have the mutex, we are borrowing buf from the list. The borrow must end before the mutex is released. */
+	buf = (void *)sys_slist_peek_head(&bt_scan_pending_adv_reports);
+
+	if (!buf) {
+		/* There are no reports available from the Controller.
+		 * Return without requesting more processing time.
+		 */
+		k_mutex_unlock(&bt_scan_reassembler_mutex);
+		return;
+	}
+
+	if (bt_scan_head_remaining_report_count == 0) {
+		if (buf->len == 0) {
+			LOG_WRN("ext adv report missing length");
+			k_mutex_unlock(&bt_scan_reassembler_mutex);
+			bt_hci_core_trigger_rx_work();
+			return;
+		}
+
+		/* The head is a new HCI ext adv report. */
+		bt_scan_head_remaining_report_count = buf->data[0];
+		be_scan_head_next_subreport_offset = 1;
+	}
+
+	if (bt_scan_head_remaining_report_count == 0) {
+		/* The head is empty. Remove it from the pending list. */
+		buf = net_buf_slist_get(&bt_scan_pending_adv_reports);
+		net_buf_unref(buf);
+		buf = NULL;
+		bt_hci_core_trigger_rx_work();
+		return;
+	}
+
+	struct bt_hci_evt_le_ext_advertising_info *subreport_info;
+	uint8_t *subreport_data;
+
+	if (buf->len < be_scan_head_next_subreport_offset + sizeof(*subreport_info)) {
+		LOG_WRN("Truncated HCI ext adv report");
+		k_mutex_unlock(&bt_scan_reassembler_mutex);
+		return;
+	}
+	subreport = &buf->data[be_scan_head_next_subreport_offset];
+	subreport_info = (void *)&subreport[0];
+	subreport_data = &subreport[sizeof(*subreport_info)];
+
+	bt_scan_head_remaining_report_count--;
+
+	k_mutex_unlock(&bt_scan_reassembler_mutex);
+
+	if (buf) {
+		bt_hci_le_adv_report(buf);
+		net_buf_unref(buf);
+	}
+
+	if (cb_enabled && bt_scan_rx_work_pending()) {
+		bt_hci_core_trigger_rx_work();
+	}
+}
 
 void bt_scan_append_ext_adv_report(struct net_buf *buf)
 {

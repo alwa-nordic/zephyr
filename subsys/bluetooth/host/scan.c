@@ -2467,7 +2467,7 @@ bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_para
 
 static K_MUTEX_DEFINE(bt_scan_reassembler_mutex);
 static size_t bt_scan_head_remaining_report_count;
-static size_t be_scan_head_next_subreport_offset;
+static size_t bt_scan_head_next_subreport_offset;
 /**
  * Appending to this list using net_buf_slist_put() is thread-safe.
  *
@@ -2520,7 +2520,7 @@ static void bt_scan_process_one(bool cb_enabled)
 
 		/* The head is a new HCI ext adv report. */
 		bt_scan_head_remaining_report_count = buf->data[0];
-		be_scan_head_next_subreport_offset = 1;
+		bt_scan_head_next_subreport_offset = sizeof(uint8_t);
 	}
 
 	if (bt_scan_head_remaining_report_count == 0) {
@@ -2532,19 +2532,31 @@ static void bt_scan_process_one(bool cb_enabled)
 		return;
 	}
 
-	struct bt_hci_evt_le_ext_advertising_info *subreport_info;
-	uint8_t *subreport_data;
+	/* Step 1: Parse (subreport_info, subreport_data) */
 
-	if (buf->len < be_scan_head_next_subreport_offset + sizeof(*subreport_info)) {
-		LOG_WRN("Truncated HCI ext adv report");
+	struct bt_hci_evt_le_ext_advertising_info *subreport_info;
+
+	if (buf->len < bt_scan_head_next_subreport_offset + sizeof(*subreport_info)) {
+		LOG_WRN("ext adv subreport missing header");
 		k_mutex_unlock(&bt_scan_reassembler_mutex);
 		return;
 	}
-	subreport = &buf->data[be_scan_head_next_subreport_offset];
+	subreport = &buf->data[bt_scan_head_next_subreport_offset];
+	bt_scan_head_next_subreport_offset += sizeof(*subreport);
 	subreport_info = (void *)&subreport[0];
+
+	if (buf->len < bt_scan_head_next_subreport_offset + sizeof(*subreport_info) + subreport_info->length) {
+		LOG_WRN("ext adv subreport out of bound");
+	}
+
+	uint8_t *subreport_data;
 	subreport_data = &subreport[sizeof(*subreport_info)];
 
+	bt_scan_head_next_subreport_offset += subreport_info->length;
 	bt_scan_head_remaining_report_count--;
+
+	/* Step 2: Feed reassembly machine */
+
 
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 

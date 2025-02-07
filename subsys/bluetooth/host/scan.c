@@ -2467,7 +2467,6 @@ bool bt_le_explicit_scanner_uses_same_params(const struct bt_conn_le_create_para
 
 static K_MUTEX_DEFINE(bt_scan_reassembler_mutex);
 static size_t bt_scan_head_remaining_report_count;
-static size_t bt_scan_head_next_subreport_offset;
 /**
  * Appending to this list using net_buf_slist_put() is thread-safe.
  *
@@ -2475,9 +2474,35 @@ static size_t bt_scan_head_next_subreport_offset;
  */
 static sys_slist_t bt_scan_pending_adv_reports;
 
-/*
- * This function will process subreports until a complete
- * report has been found or reassembled or the report queue is empty.
+/* Subreports are processed in a critical section in the following manner:
+
+There is a report processing "read head" that moves only in the critical section.
+
+and will holds a reference to a
+HCI ext adv report buffer.
+ taking an HCI report buf from the queue
+
+Removing from the queue is only allowed in the critical section.
+
+ *
+ *
+ * This function will process subreports in a critical section until:
+    - The report queue is empty. Just exit.
+ *  - A complete subreport is encountered. If the callback is
+ *    disabled, we simply skip it and continue. Otherwise,
+ *    we take an extra reference to the report net_buf, leave the critical
+ *    section, invoke the callback, then release the extra reference.
+ *  - A complete report has been reassembled. If the callback is
+      disabled, we reset the reassembler, discarding the
+      reassembled report. Otherwise, ensure the reassembler state is "processing callback",
+ *    the same critical section, is  case the buffer holding the
+ *    data will now be kept alive and used to invoke the
+ *    application callback, or finally the report queue is
+ *    empty.
+        - We reach the end of the net_buf was removed from the
+          queue. This is a good time to yield by exiting. If the
+          queue is not empty, we schedule the continuation of
+          processing before exit.
  *
  * Any number of threads may invoke this function, but it's intended for
  * two. One thread is the normal thread to invoke this function, with
@@ -2495,8 +2520,9 @@ static void bt_scan_process_one(bool cb_enabled)
 {
 	struct net_buf *buf = NULL;
 
-	uint8_t *subreport;
 
+
+	/* Start of critical section */
 	k_mutex_lock(&bt_scan_reassembler_mutex, K_FOREVER);
 
 	/* While we have the mutex, we are borrowing buf from the list. The borrow must end before the mutex is released. */
@@ -2506,68 +2532,46 @@ static void bt_scan_process_one(bool cb_enabled)
 		/* There are no reports available from the Controller.
 		 * Return without requesting more processing time.
 		 */
-		k_mutex_unlock(&bt_scan_reassembler_mutex);
-		return;
+		 goto exit;
 	}
 
+	/* Invariant: If `bt_scan_head_remaining_report_count == 0` at the
+	 * start of the critical section, `buf` is a new HCI
+	 * ext adv report that has not yet had its length header removed.
+	 */
 	if (bt_scan_head_remaining_report_count == 0) {
 		if (buf->len == 0) {
 			LOG_WRN("ext adv report missing length");
-			k_mutex_unlock(&bt_scan_reassembler_mutex);
-			bt_hci_core_trigger_rx_work();
-			return;
+			goto exit;
 		}
 
-		/* The head is a new HCI ext adv report. */
-		bt_scan_head_remaining_report_count = buf->data[0];
-		bt_scan_head_next_subreport_offset = sizeof(uint8_t);
+		bt_scan_head_remaining_report_count = net_buf_pull_u8(buf);
+
+		if (IS_ENABLED(CONFIG_DEBUG) && !IN_RANGE(bt_scan_head_remaining_report_count, 1, 0x0a)) {
+			LOG_ERR("Non-conformant Num_Reports %d", bt_scan_head_remaining_report_count);
+		}
 	}
 
-	if (bt_scan_head_remaining_report_count == 0) {
-		/* The head is empty. Remove it from the pending list. */
+	while (bt_scan_head_remaining_report_count-- > 0) {
+
+	}
+
+exit:
+	/* Before exiting the critical section, restore the invariant. */
+	if (bt_scan_head_remaining_report_count == 0 && buf) {
+		/* The remaining count is 0, the invariant is upheld by removing `buf` before we exit. */
 		buf = net_buf_slist_get(&bt_scan_pending_adv_reports);
 		net_buf_unref(buf);
 		buf = NULL;
+	}
+
+	if(sys_slist_peek_head(&bt_scan_pending_adv_reports)) {
 		bt_hci_core_trigger_rx_work();
-		return;
 	}
 
-	/* Step 1: Parse (subreport_info, subreport_data) */
-
-	struct bt_hci_evt_le_ext_advertising_info *subreport_info;
-
-	if (buf->len < bt_scan_head_next_subreport_offset + sizeof(*subreport_info)) {
-		LOG_WRN("ext adv subreport missing header");
-		k_mutex_unlock(&bt_scan_reassembler_mutex);
-		return;
-	}
-	subreport = &buf->data[bt_scan_head_next_subreport_offset];
-	bt_scan_head_next_subreport_offset += sizeof(*subreport);
-	subreport_info = (void *)&subreport[0];
-
-	if (buf->len < bt_scan_head_next_subreport_offset + sizeof(*subreport_info) + subreport_info->length) {
-		LOG_WRN("ext adv subreport out of bound");
-	}
-
-	uint8_t *subreport_data;
-	subreport_data = &subreport[sizeof(*subreport_info)];
-
-	bt_scan_head_next_subreport_offset += subreport_info->length;
-	bt_scan_head_remaining_report_count--;
-
-	/* Step 2: Feed reassembly machine */
-
-
+	/* End of critical section */
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 
-	if (buf) {
-		bt_hci_le_adv_report(buf);
-		net_buf_unref(buf);
-	}
-
-	if (cb_enabled && bt_scan_rx_work_pending()) {
-		bt_hci_core_trigger_rx_work();
-	}
 }
 
 void bt_scan_append_ext_adv_report(struct net_buf *buf)

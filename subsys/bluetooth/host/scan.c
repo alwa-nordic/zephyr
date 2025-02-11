@@ -63,7 +63,10 @@ static struct scanner_state scan_state;
 /* A buffer used to reassemble advertisement data from the controller. */
 NET_BUF_SIMPLE_DEFINE(ext_scan_buf, CONFIG_BT_EXT_SCAN_BUF_SIZE);
 
+NET_BUF_POOL_FIXED_DEFINE(ext_scan_pool, 1, CONFIG_BT_EXT_SCAN_BUF_SIZE, 0, NULL);
+
 struct fragmented_advertiser {
+	struct net_buf *buf;
 	bt_addr_le_t addr;
 	uint8_t sid;
 	enum {
@@ -88,10 +91,15 @@ static void init_reassembling_advertiser(const bt_addr_le_t *addr, uint8_t sid)
 	bt_addr_le_copy(&reassembling_advertiser.addr, addr);
 	reassembling_advertiser.sid = sid;
 	reassembling_advertiser.state = FRAG_ADV_REASSEMBLING;
+	reassembling_advertiser.buf = net_buf_alloc(&ext_scan_pool, K_NO_WAIT);
 }
 
 static void reset_reassembling_advertiser(void)
 {
+	if (reassembling_advertiser.buf) {
+		net_buf_unref(reassembling_advertiser.buf);
+		reassembling_advertiser.buf = NULL;
+	}
 	net_buf_simple_reset(&ext_scan_buf);
 	reassembling_advertiser.state = FRAG_ADV_INACTIVE;
 }
@@ -2515,15 +2523,25 @@ Removing from the queue is only allowed in the critical section.
  * invokes at most one application callback if cb_enabled is true
  * non-blocking if cb_enabled is false
  * thread-safe
+
+ This function takes care to not reorder advertising reports.
  */
 static void bt_scan_process_one(bool cb_enabled)
 {
 	struct net_buf *buf = NULL;
-
-
+	struct net_buf *cb_buf_ownership = NULL;
+	struct bt_hci_evt_le_ext_advertising_info *cb_evt = NULL;
 
 	/* Start of critical section */
 	k_mutex_lock(&bt_scan_reassembler_mutex, K_FOREVER);
+
+	/* Important: Inside the critical section shall be ISR
+	 * safe. Do not invoke any callbacks here. That also
+	 * prohibits the use of `net_buf_unref`.
+	 */
+
+	/* Give callbacks for any reports that were reassembled while callback were disabled. */
+	// TODO
 
 	/* While we have the mutex, we are borrowing buf from the list. The borrow must end before the mutex is released. */
 	buf = (void *)sys_slist_peek_head(&bt_scan_pending_adv_reports);
@@ -2552,7 +2570,119 @@ static void bt_scan_process_one(bool cb_enabled)
 		}
 	}
 
+	/* The loop continues until  */
 	while (bt_scan_head_remaining_report_count-- > 0) {
+		struct bt_hci_evt_le_ext_advertising_info *evt;
+		uint16_t data_status;
+		uint16_t evt_type;
+		bool is_report_complete;
+		bool more_to_come;
+		bool is_new_advertiser;
+
+		if (buf->len < sizeof(*evt)) {
+			/* EIO */
+			LOG_ERR("Unexpected end of buffer");
+			bt_scan_head_remaining_report_count = 0;
+			goto exit;
+		}
+
+		evt = net_buf_pull_mem(buf, sizeof(*evt));
+		evt_type = sys_le16_to_cpu(evt->evt_type);
+		data_status = BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS(evt_type);
+		is_report_complete = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE;
+		more_to_come = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
+
+		if (evt->length > buf->len) {
+			/* EIO */
+			LOG_WRN("Adv report corrupted (wants %u out of %u)", evt->length, buf->len);
+			LOG_ERR("Unexpected end of buffer");
+			bt_scan_head_remaining_report_count = 0;
+			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+			goto exit;
+		}
+
+		/* Pull the event data. It's accessible trough `evt->data`. */
+		net_buf_pull(buf, evt->length);
+
+		if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
+			cb_buf_ownership = net_buf_ref(buf);
+			cb_evt = evt;
+			break;
+		}
+
+		is_new_advertiser = reassembling_advertiser.state == FRAG_ADV_INACTIVE ||
+				    !fragmented_advertisers_equal(&reassembling_advertiser,
+								  &evt->addr, evt->sid);
+
+		if (is_new_advertiser && is_report_complete) {
+			cb_buf_ownership = net_buf_ref(buf);
+			cb_evt = evt;
+			break;
+		}
+
+		if (is_new_advertiser && reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
+			LOG_WRN("Received an incomplete advertising report while reassembling "
+				"advertising reports from a different advertiser. The advertising "
+				"report is discarded and future scan results may be incomplete. "
+				"Interleaving of fragmented advertising reports from different "
+				"advertisers is not yet supported.");
+			continue;
+		}
+
+		if (data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE) {
+			/* Got HCI_LE_Extended_Advertising_Report: Incomplete, data truncated, no
+			 * more to come. This means the Controller is aborting the reassembly. We
+			 * discard the partially received report, and the application is not
+			 * notified.
+			 *
+			 * See the Controller's documentation for possible reasons for aborting.
+			 * Hint: CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX.
+			 */
+			LOG_DBG("Discarding incomplete advertisement.");
+			reset_reassembling_advertiser();
+			continue;
+		}
+
+		/* Start reassembly */
+		if (is_new_advertiser) {
+			/* We are not reassembling reports from an advertiser and
+			 * this is the first report from the new advertiser.
+			 * Initialize the new advertiser.
+			 */
+			__ASSERT_NO_MSG(reassembling_advertiser.state == FRAG_ADV_INACTIVE);
+			init_reassembling_advertiser(&evt->addr, evt->sid);
+		}
+
+		if (evt->length + ext_scan_buf.len > ext_scan_buf.size) {
+			/* The report does not fit in the reassemby buffer
+			 * Discard this and future reports from the advertiser.
+			 */
+			LOG_WRN("Oversize advertisement");
+			if (reassembling_advertiser.buf) {
+				net_buf_unref(reassembling_advertiser.buf);
+				reassembling_advertiser.buf = NULL;
+			}
+		}
+
+		/* Append to reassembler */
+		if (reassembling_advertiser.buf) {
+			net_buf_add_mem(reassembling_advertiser.buf, buf->data, evt->length);
+		}
+
+		/* Finish reassembly */
+		if (!more_to_come) {
+			if (reassembling_advertiser.buf) {
+				cb_buf_ownership = reassembling_advertiser.buf;
+				reassembling_advertiser.buf = NULL;
+				cb_evt = evt;
+			}
+
+			reset_reassembling_advertiser();
+
+			if (cb_evt) {
+				goto exit;
+			}
+		}
 
 	}
 
@@ -2572,6 +2702,15 @@ exit:
 	/* End of critical section */
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 
+	/* Now we invoke application callbacks */
+	if (cb_evt) {
+		struct bt_le_scan_recv_info scan_info;
+		struct net_buf_simple scan_data;
+
+		create_ext_adv_info(cb_evt, &scan_info);
+		net_buf_simple_init_with_data(&scan_data, cb_evt->data, cb_evt->length);
+		le_adv_recv(&cb_evt->addr, &scan_info, &scan_data, scan_data.len);
+	}
 }
 
 void bt_scan_append_ext_adv_report(struct net_buf *buf)

@@ -2695,10 +2695,6 @@ exit:
 		buf = NULL;
 	}
 
-	if(sys_slist_peek_head(&bt_scan_pending_adv_reports)) {
-		bt_hci_core_trigger_rx_work();
-	}
-
 	/* End of critical section */
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 
@@ -2726,12 +2722,7 @@ bool bt_scan_rx_work_pending(void)
 
 void bt_scan_rx_work(void)
 {
-	struct net_buf *buf;
-
-	buf = net_buf_slist_get(&bt_scan_pending_adv_reports);
-
-	bt_hci_le_adv_ext_report(buf);
-	net_buf_unref(buf);
+	bt_scan_process_one(true);
 
 	if (bt_scan_rx_work_pending()) {
 		bt_hci_core_trigger_rx_work();

@@ -143,5 +143,15 @@ bool bt_scan_rx_work_pending(void);
  */
 void bt_scan_rx_work(void);
 
+/**
+ * Append an advertising report to the scan module. This function is
+ * intended to be used by the controller to deliver advertising reports
+ * to the scan module.
+ *
+ * The buffer node ownership is taken.
+ * The buffer's destroy callback must be ISR safe.
+ *
+ * @param buf A buffer containing the advertising report.
+ */
 void bt_scan_append_ext_adv_report(struct net_buf *buf);
 #endif /* defined SUBSYS_BLUETOOTH_HOST_SCAN_H_ */

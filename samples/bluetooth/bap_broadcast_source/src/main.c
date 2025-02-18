@@ -609,7 +609,7 @@ int main(void)
 		/* Setup extended advertising data */
 		net_buf_simple_add_le16(&ad_buf, BT_UUID_BROADCAST_AUDIO_VAL);
 		net_buf_simple_add_le24(&ad_buf, broadcast_id);
-		ext_ad[0].type = BT_DATA_SVC_DATA16;
+		ext_ad[0].type = bt_data_svc_data16;
 		ext_ad[0].data_len = ad_buf.len;
 		ext_ad[0].data = ad_buf.data;
 		ext_ad[1] = (struct bt_data)BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME,

@@ -12,14 +12,43 @@
 #include "testlib/log_utils.h"
 #include "babblekit/flags.h"
 #include "babblekit/testcase.h"
+#include <stdint.h>
 
 LOG_MODULE_REGISTER(peer, LOG_LEVEL_DBG);
 
 extern unsigned long runtime_log_level;
 
+static const char sample_data[] =
+	"0 Very Long Name"
+	"0123456789abcdef"
+	"1 Very Long Name"
+	"0123456789abcdef"
+
+	"2 Very Long Name"
+	"0123456789abcdef"
+	"3 Very Long Name"
+	"0123456789abcdef"
+
+	"4 Very Long Name"
+	"0123456789abcdef"
+	"5 Very Long Name"
+	"0123456789abcdef"
+
+	"6 Very Long Name"
+	"0123456789abcdef"
+	"7 Very Long Name"
+	"0123456789abcdef"
+
+	"8 Very Long Name"
+	"0123456789abcdef"
+	"9 Very Long Name"
+	"0123456789abcdef"
+	;
+
 void entrypoint_peer(void)
 {
 	int err;
+	struct bt_data ad;
 
 	TEST_START("peer");
 
@@ -39,6 +68,14 @@ void entrypoint_peer(void)
 	err = bt_le_ext_adv_create(&adv_param, NULL, &adv);
 	TEST_ASSERT(!err, "Failed to create advertising set: %d", err);
 	LOG_DBG("Created extended advertising set.");
+
+	ad.type = BT_DATA_MANUFACTURER_DATA;
+	ad.data = "";
+	ad.data_len = ;
+
+	err = bt_le_ext_adv_set_data(adv, &ad, 1, NULL, 0);
+	TEST_ASSERT(!err, "Failed to set advertising data: %d", err);
+	LOG_DBG("Set advertising data.");
 
 	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
 	TEST_ASSERT(!err, "Failed to start extended advertising: %d", err);

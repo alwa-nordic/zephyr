@@ -154,4 +154,17 @@ void bt_scan_rx_work(void);
  * @param buf A buffer containing the advertising report.
  */
 void bt_scan_append_ext_adv_report(struct net_buf *buf);
+
+/**
+ * Immediately force processing advertising reports, discarding
+ * data if necessary, until this frees one HCI buffer.
+ * Processing advertising reports in this manner will nok invoke
+ * the application scan result callbacks.
+ *
+ * This is intended to safely discard advertising reports and
+ * reclaim an HCI event buffer.
+ *
+ * isr-ok
+ */
+void bt_scan_drop_buf(void);
 #endif /* defined SUBSYS_BLUETOOTH_HOST_SCAN_H_ */

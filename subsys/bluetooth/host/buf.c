@@ -12,6 +12,7 @@
 #include "hci_core.h"
 #include "conn_internal.h"
 #include "iso_internal.h"
+#include "scan.h"
 
 #include <zephyr/bluetooth/hci.h>
 
@@ -106,7 +107,11 @@ struct net_buf *bt_buf_get_rx(enum bt_buf_type type, k_timeout_t timeout)
 
 #if defined(CONFIG_BT_HCI_ACL_FLOW_CONTROL)
 	if (type == BT_BUF_EVT) {
-		buf = net_buf_alloc(&evt_pool, timeout);
+		buf = net_buf_alloc(&evt_pool, K_NO_WAIT);
+		if (!buf) {
+			bt_scan_drop_buf();
+			buf = net_buf_alloc(&evt_pool, timeout);
+		}
 	} else {
 		buf = net_buf_alloc(&acl_in_pool, timeout);
 	}

@@ -2699,13 +2699,17 @@ exit:
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 
 	/* Now we invoke application callbacks */
-	if (cb_evt) {
+	if (cb_evt && cb_enabled) {
 		struct bt_le_scan_recv_info scan_info;
 		struct net_buf_simple scan_data;
 
 		create_ext_adv_info(cb_evt, &scan_info);
 		net_buf_simple_init_with_data(&scan_data, cb_evt->data, cb_evt->length);
 		le_adv_recv(&cb_evt->addr, &scan_info, &scan_data, scan_data.len);
+	}
+
+	if (cb_buf_ownership) {
+		net_buf_unref(cb_buf_ownership);
 	}
 }
 
@@ -2727,4 +2731,9 @@ void bt_scan_rx_work(void)
 	if (bt_scan_rx_work_pending()) {
 		bt_hci_core_trigger_rx_work();
 	}
+}
+
+void bt_scan_drop_buf(void)
+{
+	bt_scan_process_one(false);
 }

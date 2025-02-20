@@ -18,32 +18,36 @@ LOG_MODULE_REGISTER(peer, LOG_LEVEL_DBG);
 
 extern unsigned long runtime_log_level;
 
-static const char very_long_name[] =
-	"0 Very Long Name"
-	"0123456789abcdef"
-	"1 Very Long Name"
-	"0123456789abcdef"
+static const char very_long_name[] = "0 Very Long Name"
+				     "0123456789abcdef"
+				     "1 Very Long Name"
+				     "0123456789abcdef"
 
-	"2 Very Long Name"
-	"0123456789abcdef"
-	"3 Very Long Name"
-	"0123456789abcdef"
+				     "2 Very Long Name"
+				     "0123456789abcdef"
+				     "3 Very Long Name"
+				     "0123456789abcdef"
 
-	"4 Very Long Name"
-	"0123456789abcdef"
-	"5 Very Long Name"
-	"0123456789abcdef"
+				     "4 Very Long Name"
+				     "0123456789abcdef"
+				     "5 Very Long Name"
+				     "0123456789abcdef"
 
-	"6 Very Long Name"
-	"0123456789abcdef"
-	"7 Very Long Name"
-	"01234567"
-	;
+				     "6 Very Long Name"
+				     "0123456789abcdef"
+				     "7 Very Long Name"
+				     "01234567";
 
 void entrypoint_peer(void)
 {
 	int err;
-	struct bt_data ad;
+	struct bt_data ad[] = {
+		{
+			.type = BT_DATA_NAME_COMPLETE,
+			.data = very_long_name,
+			.data_len = strlen(very_long_name),
+		},
+	};
 
 	TEST_START("peer");
 
@@ -64,11 +68,7 @@ void entrypoint_peer(void)
 	TEST_ASSERT(!err, "Failed to create advertising set: %d", err);
 	LOG_DBG("Created extended advertising set.");
 
-	ad.type = BT_DATA_NAME_COMPLETE;
-	ad.data = very_long_name;
-	ad.data_len = strlen(very_long_name);
-
-	err = bt_le_ext_adv_set_data(adv, &ad, 1, NULL, 0);
+	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
 	TEST_ASSERT(!err, "Failed to set advertising data: %d", err);
 	LOG_DBG("Set advertising data.");
 

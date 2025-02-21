@@ -60,8 +60,6 @@ static sys_slist_t scan_cbs = SYS_SLIST_STATIC_INIT(&scan_cbs);
 static struct scanner_state scan_state;
 
 #if defined(CONFIG_BT_EXT_ADV)
-/* A buffer used to reassemble advertisement data from the controller. */
-NET_BUF_SIMPLE_DEFINE(ext_scan_buf, CONFIG_BT_EXT_SCAN_BUF_SIZE);
 
 NET_BUF_POOL_FIXED_DEFINE(ext_scan_pool, 1, CONFIG_BT_EXT_SCAN_BUF_SIZE, 0, NULL);
 
@@ -100,7 +98,6 @@ static void reset_reassembling_advertiser(void)
 		net_buf_unref(reassembling_advertiser.buf);
 		reassembling_advertiser.buf = NULL;
 	}
-	net_buf_simple_reset(&ext_scan_buf);
 	reassembling_advertiser.state = FRAG_ADV_INACTIVE;
 }
 
@@ -804,157 +801,6 @@ static void create_ext_adv_info(struct bt_hci_evt_le_ext_advertising_info const 
 	scan_info->interval = sys_le16_to_cpu(evt->interval);
 	scan_info->adv_type = get_adv_type(sys_le16_to_cpu(evt->evt_type));
 	scan_info->adv_props = get_adv_props_extended(sys_le16_to_cpu(evt->evt_type));
-}
-
-void bt_hci_le_adv_ext_report(struct net_buf *buf)
-{
-	uint8_t num_reports = net_buf_pull_u8(buf);
-
-	LOG_DBG("Adv number of reports %u", num_reports);
-
-	while (num_reports--) {
-		struct bt_hci_evt_le_ext_advertising_info *evt;
-		struct bt_le_scan_recv_info scan_info;
-		uint16_t data_status;
-		uint16_t evt_type;
-		bool is_report_complete;
-		bool more_to_come;
-		bool is_new_advertiser;
-
-		if (!atomic_test_bit(scan_state.scan_flags, BT_LE_SCAN_USER_EXPLICIT_SCAN)) {
-			/* The application has not requested explicit scan, so it is not expecting
-			 * advertising reports. Discard, and reset the reassembler if not inactive
-			 * This is done in the loop as this flag can change between each iteration,
-			 * and it is not uncommon that scanning is disabled in the callback called
-			 * from le_adv_recv
-			 */
-
-			if (reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
-				reset_reassembling_advertiser();
-			}
-
-			break;
-		}
-
-		if (buf->len < sizeof(*evt)) {
-			LOG_ERR("Unexpected end of buffer");
-			break;
-		}
-
-		evt = net_buf_pull_mem(buf, sizeof(*evt));
-		evt_type = sys_le16_to_cpu(evt->evt_type);
-		data_status = BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS(evt_type);
-		is_report_complete = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE;
-		more_to_come = data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL;
-
-		if (evt->length > buf->len) {
-			LOG_WRN("Adv report corrupted (wants %u out of %u)", evt->length, buf->len);
-
-			net_buf_reset(buf);
-
-			if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
-				return;
-			}
-
-			/* Start discarding irrespective of the `more_to_come` flag. We
-			 * assume we may have lost a partial adv report in the truncated
-			 * data.
-			 */
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
-
-			return;
-		}
-
-		if (evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) {
-			/* Legacy advertising reports are complete.
-			 * Create event immediately.
-			 */
-			create_ext_adv_info(evt, &scan_info);
-			le_adv_recv(&evt->addr, &scan_info, &buf->b, evt->length);
-			goto cont;
-		}
-
-		is_new_advertiser = reassembling_advertiser.state == FRAG_ADV_INACTIVE ||
-				    !fragmented_advertisers_equal(&reassembling_advertiser,
-								  &evt->addr, evt->sid);
-
-		if (is_new_advertiser && is_report_complete) {
-			/* Only advertising report from this advertiser.
-			 * Create event immediately.
-			 */
-			create_ext_adv_info(evt, &scan_info);
-			le_adv_recv(&evt->addr, &scan_info, &buf->b, evt->length);
-			goto cont;
-		}
-
-		if (is_new_advertiser && reassembling_advertiser.state == FRAG_ADV_REASSEMBLING) {
-			LOG_WRN("Received an incomplete advertising report while reassembling "
-				"advertising reports from a different advertiser. The advertising "
-				"report is discarded and future scan results may be incomplete. "
-				"Interleaving of fragmented advertising reports from different "
-				"advertisers is not yet supported.");
-			goto cont;
-		}
-
-		if (data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE) {
-			/* Got HCI_LE_Extended_Advertising_Report: Incomplete, data truncated, no
-			 * more to come. This means the Controller is aborting the reassembly. We
-			 * discard the partially received report, and the application is not
-			 * notified.
-			 *
-			 * See the Controller's documentation for possible reasons for aborting.
-			 * Hint: CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX.
-			 */
-			LOG_DBG("Discarding incomplete advertisement.");
-			reset_reassembling_advertiser();
-			goto cont;
-		}
-
-		if (is_new_advertiser) {
-			/* We are not reassembling reports from an advertiser and
-			 * this is the first report from the new advertiser.
-			 * Initialize the new advertiser.
-			 */
-			__ASSERT_NO_MSG(reassembling_advertiser.state == FRAG_ADV_INACTIVE);
-			init_reassembling_advertiser(&evt->addr, evt->sid);
-		}
-
-		if (evt->length + ext_scan_buf.len > ext_scan_buf.size) {
-			/* The report does not fit in the reassemby buffer
-			 * Discard this and future reports from the advertiser.
-			 */
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
-		}
-
-		if (reassembling_advertiser.state == FRAG_ADV_DISCARDING) {
-			if (!more_to_come) {
-				/* We do no longer need to keep track of this advertiser as
-				 * all the expected data is received.
-				 */
-				reset_reassembling_advertiser();
-			}
-			goto cont;
-		}
-
-		net_buf_simple_add_mem(&ext_scan_buf, buf->data, evt->length);
-		if (more_to_come) {
-			/* The controller will send additional reports to be reassembled */
-			continue;
-		}
-
-		/* No more data coming from the controller.
-		 * Create event.
-		 */
-		__ASSERT_NO_MSG(is_report_complete);
-		create_ext_adv_info(evt, &scan_info);
-		le_adv_recv(&evt->addr, &scan_info, &ext_scan_buf, ext_scan_buf.len);
-
-		/* We do no longer need to keep track of this advertiser. */
-		reset_reassembling_advertiser();
-
-cont:
-		net_buf_pull(buf, evt->length);
-	}
 }
 
 #if defined(CONFIG_BT_PER_ADV_SYNC)

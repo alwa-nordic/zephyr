@@ -2565,13 +2565,12 @@ static void bt_scan_process_one(bool cb_enabled)
 
 		bt_scan_head_remaining_report_count = net_buf_pull_u8(buf);
 
-		if (IS_ENABLED(CONFIG_DEBUG) && !IN_RANGE(bt_scan_head_remaining_report_count, 1, 0x0a)) {
+		if (!IN_RANGE(bt_scan_head_remaining_report_count, 1, 0x0a)) {
 			LOG_ERR("Non-conformant Num_Reports %d", bt_scan_head_remaining_report_count);
 		}
 	}
 
-	/* The loop continues until  */
-	while (bt_scan_head_remaining_report_count-- > 0) {
+	while (bt_scan_head_remaining_report_count > 0) {
 		struct bt_hci_evt_le_ext_advertising_info *evt;
 		uint16_t data_status;
 		uint16_t evt_type;
@@ -2579,9 +2578,11 @@ static void bt_scan_process_one(bool cb_enabled)
 		bool more_to_come;
 		bool is_new_advertiser;
 
+		bt_scan_head_remaining_report_count--;
+
 		if (buf->len < sizeof(*evt)) {
 			/* EIO */
-			LOG_ERR("Unexpected end of buffer");
+			LOG_ERR("Unexpected end of buffer 1");
 			bt_scan_head_remaining_report_count = 0;
 			goto exit;
 		}
@@ -2595,7 +2596,6 @@ static void bt_scan_process_one(bool cb_enabled)
 		if (evt->length > buf->len) {
 			/* EIO */
 			LOG_WRN("Adv report corrupted (wants %u out of %u)", evt->length, buf->len);
-			LOG_ERR("Unexpected end of buffer");
 			bt_scan_head_remaining_report_count = 0;
 			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
 			goto exit;
@@ -2653,20 +2653,19 @@ static void bt_scan_process_one(bool cb_enabled)
 			init_reassembling_advertiser(&evt->addr, evt->sid);
 		}
 
-		if (evt->length + ext_scan_buf.len > ext_scan_buf.size) {
-			/* The report does not fit in the reassemby buffer
-			 * Discard this and future reports from the advertiser.
-			 */
-			LOG_WRN("Oversize advertisement");
-			if (reassembling_advertiser.buf) {
+		/* Append to reassembler */
+		if (reassembling_advertiser.buf) {
+			if (net_buf_tailroom(reassembling_advertiser.buf) > evt->length) {
+				net_buf_add_mem(reassembling_advertiser.buf, buf->data,
+						evt->length);
+			} else {
+				/* The report does not fit in the reassemby buffer
+				 * Discard this and future reports from the advertiser.
+				 */
+				LOG_WRN("Oversize advertisement");
 				net_buf_unref(reassembling_advertiser.buf);
 				reassembling_advertiser.buf = NULL;
 			}
-		}
-
-		/* Append to reassembler */
-		if (reassembling_advertiser.buf) {
-			net_buf_add_mem(reassembling_advertiser.buf, buf->data, evt->length);
 		}
 
 		/* Finish reassembly */

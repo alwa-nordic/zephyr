@@ -38,6 +38,9 @@ static const char very_long_name[] = "0 Very Long Name"
 				     "7 Very Long Name"
 				     "01234567";
 
+
+static const char very_long_ead[] = "asdfasdfasdfsadfasdfsadfsadfsadfsdfasfd";
+
 void entrypoint_peer(void)
 {
 	int err;
@@ -46,6 +49,11 @@ void entrypoint_peer(void)
 			.type = BT_DATA_NAME_COMPLETE,
 			.data = very_long_name,
 			.data_len = strlen(very_long_name),
+		},
+		{
+			.type = BT_DATA_ENCRYPTED_AD_DATA,
+			.data = very_long_ead,
+			.data_len = strlen(very_long_ead),
 		},
 	};
 

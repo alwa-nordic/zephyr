@@ -30,6 +30,9 @@ if(CONFIG_BT_HCI_HOST)
     CONFIG_BT_OBSERVER
     scan.c
     )
+  if (CONFIG_BT_OBSERVER AND CONFIG_BT_EXT_ADV)
+    zephyr_library_sources(scan_reassembler.c)
+  endif()
 
   zephyr_library_sources_ifdef(
     CONFIG_BT_HOST_CRYPTO

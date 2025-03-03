@@ -167,4 +167,10 @@ void bt_scan_append_ext_adv_report(struct net_buf *buf);
  * isr-ok
  */
 void bt_scan_drop_buf(void);
+
+
+void reset_reassembling_advertiser(void);
+
+void le_adv_recv(bt_addr_le_t *addr, struct bt_le_scan_recv_info *info, struct net_buf_simple *buf,
+	uint16_t len);
 #endif /* defined SUBSYS_BLUETOOTH_HOST_SCAN_H_ */

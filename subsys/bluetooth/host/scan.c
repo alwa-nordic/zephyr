@@ -34,6 +34,8 @@
 #include "zephyr/net_buf.h"
 #include "zephyr/sys/__assert.h"
 #include "zephyr/sys/slist.h"
+#include "zephyr/sys/util_macro.h"
+#include "scan_reassembler.h"
 
 #define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -70,9 +72,9 @@ static sys_slist_t pa_sync_cbs = SYS_SLIST_STATIC_INIT(&pa_sync_cbs);
 void bt_scan_softreset(void)
 {
 	scan_dev_found_cb = NULL;
-#if defined(CONFIG_BT_EXT_ADV)
-	reset_reassembling_advertiser();
-#endif
+	if (IS_ENABLED(CONFIG_BT_EXT_ADV)) {
+		bt_scan_reassembler_reset();
+	}
 }
 
 void bt_scan_reset(void)

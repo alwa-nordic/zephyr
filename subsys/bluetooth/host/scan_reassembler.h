@@ -55,6 +55,8 @@ static inline void bt_scan_reassembler_init(struct bt_scan_reassembler_state *st
  * thread-safe
  * isr-ok
  */
+void bt_scan_reassembler_reset(void);
+#if 0
 static inline void bt_scan_reassembler_reset(struct bt_scan_reassembler_state *state)
 {
 	/* This function returns the state to what it was */
@@ -72,6 +74,7 @@ static inline void bt_scan_reassembler_reset(struct bt_scan_reassembler_state *s
 
 	k_mutex_unlock(&state->mutex);
 }
+#endif
 
 /*
  * The caller must ensure the buffer's net_buf_unref is isr-ok.

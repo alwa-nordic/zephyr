@@ -28,6 +28,15 @@ LOG_MODULE_REGISTER(bt_scan_reassembler);
 
 NET_BUF_POOL_FIXED_DEFINE(ext_scan_pool, 1, CONFIG_BT_EXT_SCAN_BUF_SIZE, 0, NULL);
 
+static K_MUTEX_DEFINE(bt_scan_reassembler_mutex);
+static size_t bt_scan_head_remaining_report_count;
+/**
+ * Appending to this list using net_buf_slist_put() is thread-safe.
+ *
+ * Removing from this list is allowed only when holding the bt_scan_reassembler_mutex.
+ */
+static sys_slist_t bt_scan_pending_adv_reports;
+
 struct fragmented_advertiser {
 	/* If NULL, data should be discarded. */
 	struct net_buf *buf;
@@ -57,14 +66,25 @@ static void init_reassembling_advertiser(const bt_addr_le_t *addr, uint8_t sid)
 	reassembling_advertiser.buf = net_buf_alloc(&ext_scan_pool, K_NO_WAIT);
 }
 
-void reset_reassembling_advertiser(void)
+static void reset_reassembling_advertiser(struct fragmented_advertiser *reassembly)
 {
-	if (reassembling_advertiser.buf) {
-		net_buf_unref(reassembling_advertiser.buf);
-		reassembling_advertiser.buf = NULL;
+	if (reassembly->buf) {
+		net_buf_unref(reassembly->buf);
+		reassembly->buf = NULL;
 	}
-	reassembling_advertiser.addr = (bt_addr_le_t){};
-	reassembling_advertiser.sid = 0;
+	reassembly->addr = (bt_addr_le_t){};
+	reassembly->sid = 0;
+}
+
+void bt_scan_reassembler_reset(void)
+{
+	k_mutex_lock(&bt_scan_reassembler_mutex, K_FOREVER);
+	reset_reassembling_advertiser(&reassembling_advertiser);
+	for (struct net_buf *buf; (buf = net_buf_slist_get(&bt_scan_pending_adv_reports));) {
+		net_buf_unref(buf);
+	}
+	bt_scan_head_remaining_report_count = 0;
+	k_mutex_unlock(&bt_scan_reassembler_mutex);
 }
 
 /* Convert Extended adv report evt_type field into adv type */
@@ -156,15 +176,6 @@ static void create_ext_adv_info(struct bt_hci_evt_le_ext_advertising_info const 
 	scan_info->adv_type = get_adv_type(sys_le16_to_cpu(evt->evt_type));
 	scan_info->adv_props = get_adv_props_extended(sys_le16_to_cpu(evt->evt_type));
 }
-
-static K_MUTEX_DEFINE(bt_scan_reassembler_mutex);
-static size_t bt_scan_head_remaining_report_count;
-/**
- * Appending to this list using net_buf_slist_put() is thread-safe.
- *
- * Removing from this list is allowed only when holding the bt_scan_reassembler_mutex.
- */
-static sys_slist_t bt_scan_pending_adv_reports;
 
 /* Subreports are processed in a critical section in the following manner:
 
@@ -347,7 +358,7 @@ static void bt_scan_result_process_one(bt_scan_result_cb_t *cb)
 			 * CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX.
 			 */
 			LOG_DBG("Incomplete adv");
-			reset_reassembling_advertiser();
+			reset_reassembling_advertiser(&reassembling_advertiser);
 			continue;
 		}
 
@@ -383,7 +394,7 @@ static void bt_scan_result_process_one(bt_scan_result_cb_t *cb)
 				cb_evt = evt;
 			}
 
-			reset_reassembling_advertiser();
+			reset_reassembling_advertiser(&reassembling_advertiser);
 
 			if (cb_evt) {
 				goto exit;

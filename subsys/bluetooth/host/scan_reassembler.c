@@ -213,7 +213,7 @@ Removing from the queue is only allowed in the critical section.
 
 typedef void bt_scan_result_cb_t(bt_addr_le_t *addr, struct bt_le_scan_recv_info *info, struct net_buf_simple *buf,
 	uint16_t len);
-static void bt_scan_process_one(bt_scan_result_cb_t *cb)
+static void bt_scan_result_process_one(bt_scan_result_cb_t *cb)
 {
 	struct net_buf *buf = NULL;
 	struct net_buf *cb_buf_ownership = NULL;
@@ -432,7 +432,7 @@ bool bt_scan_rx_work_pending(void)
 
 void bt_scan_rx_work(void)
 {
-	bt_scan_process_one(le_adv_recv);
+	bt_scan_result_process_one(le_adv_recv);
 
 	if (bt_scan_rx_work_pending()) {
 		bt_hci_core_trigger_rx_work();
@@ -441,5 +441,5 @@ void bt_scan_rx_work(void)
 
 void bt_scan_drop_buf(void)
 {
-	bt_scan_process_one(NULL);
+	bt_scan_result_process_one(NULL);
 }

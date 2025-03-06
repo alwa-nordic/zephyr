@@ -29,14 +29,10 @@ LOG_MODULE_REGISTER(bt_scan_reassembler);
 NET_BUF_POOL_FIXED_DEFINE(ext_scan_pool, 1, CONFIG_BT_EXT_SCAN_BUF_SIZE, 0, NULL);
 
 struct fragmented_advertiser {
+	/* If NULL, data should be discarded. */
 	struct net_buf *buf;
 	bt_addr_le_t addr;
 	uint8_t sid;
-	enum {
-		FRAG_ADV_INACTIVE,
-		FRAG_ADV_REASSEMBLING,
-		FRAG_ADV_DISCARDING,
-	} state;
 };
 
 static struct fragmented_advertiser reassembling_advertiser;
@@ -48,12 +44,16 @@ static bool fragmented_advertisers_equal(const struct fragmented_advertiser *a,
 	return a->sid == sid && bt_addr_le_eq(&a->addr, addr);
 }
 
+static bool reassembling_advertiser_can_alloc(void)
+{
+	return bt_addr_le_eq(&reassembling_advertiser.addr, &(bt_addr_le_t){});
+}
+
 /* Sets the address and sid of the advertiser to be reassembled. */
 static void init_reassembling_advertiser(const bt_addr_le_t *addr, uint8_t sid)
 {
 	bt_addr_le_copy(&reassembling_advertiser.addr, addr);
 	reassembling_advertiser.sid = sid;
-	reassembling_advertiser.state = FRAG_ADV_REASSEMBLING;
 	reassembling_advertiser.buf = net_buf_alloc(&ext_scan_pool, K_NO_WAIT);
 }
 
@@ -63,7 +63,8 @@ void reset_reassembling_advertiser(void)
 		net_buf_unref(reassembling_advertiser.buf);
 		reassembling_advertiser.buf = NULL;
 	}
-	reassembling_advertiser.state = FRAG_ADV_INACTIVE;
+	reassembling_advertiser.addr = (bt_addr_le_t){};
+	reassembling_advertiser.sid = 0;
 }
 
 /* Convert Extended adv report evt_type field into adv type */
@@ -135,6 +136,7 @@ static uint16_t get_adv_props_extended(uint16_t evt_type)
 	 */
 	return (evt_type ^ BT_HCI_LE_ADV_EVT_TYPE_LEGACY) & BIT_MASK(5);
 }
+
 static void create_ext_adv_info(struct bt_hci_evt_le_ext_advertising_info const *const evt,
 				struct bt_le_scan_recv_info *const scan_info)
 {
@@ -219,7 +221,9 @@ static void bt_scan_process_one(bool cb_enabled)
 
 	/* Important: Inside the critical section shall be ISR
 	 * safe. Do not invoke any callbacks here. That also
-	 * prohibits the use of `net_buf_unref`.
+	 * prohibits the use of `net_buf_unref` on arbitrary
+	 * buffers. Only buffers with known isr-safe
+	 * `net_buf_unref`.
 	 */
 
 	/* Give callbacks for any reports that were reassembled while callback were disabled. */
@@ -279,7 +283,10 @@ static void bt_scan_process_one(bool cb_enabled)
 			/* EIO */
 			LOG_WRN("Adv report corrupted (wants %u out of %u)", evt->length, buf->len);
 			bt_scan_head_remaining_report_count = 0;
-			reassembling_advertiser.state = FRAG_ADV_DISCARDING;
+			if (reassembling_advertiser.buf) {
+				net_buf_unref(reassembling_advertiser.buf);
+				reassembling_advertiser.buf = NULL;
+			}
 			goto exit;
 		}
 
@@ -292,8 +299,7 @@ static void bt_scan_process_one(bool cb_enabled)
 			break;
 		}
 
-		is_new_advertiser = reassembling_advertiser.state == FRAG_ADV_INACTIVE ||
-				    !fragmented_advertisers_equal(&reassembling_advertiser,
+		is_new_advertiser = !fragmented_advertisers_equal(&reassembling_advertiser,
 								  &evt->addr, evt->sid);
 
 		if (is_new_advertiser && is_report_complete) {
@@ -302,25 +308,42 @@ static void bt_scan_process_one(bool cb_enabled)
 			break;
 		}
 
-		if (is_new_advertiser && reassembling_advertiser.state != FRAG_ADV_INACTIVE) {
-			LOG_WRN("Received an incomplete advertising report while reassembling "
-				"advertising reports from a different advertiser. The advertising "
-				"report is discarded and future scan results may be incomplete. "
-				"Interleaving of fragmented advertising reports from different "
-				"advertisers is not yet supported.");
+		if (is_new_advertiser && !reassembling_advertiser_can_alloc()) {
+			/* The Controller is interleaving fragmented advertising
+			 * reports. This is legal but not supported in this
+			 * Host, and no Controller known to us does it.
+			 *
+			 * After this error occurs, scan results provided to the
+			 * application may be truncated at the begining. This is
+			 * considered acceptable and must be tolerated by the
+			 * application since the situation is as-if a malicious
+			 * advertiser sent the truncated advertisement on
+			 * purpose.
+			 *
+			 * Supporting this would require an unbounded amount of
+			 * memory, as we have to store the address and sid of
+			 * the advertising set to drop. This is a consequence of
+			 * the lack of a flag in the HCI report that it contains
+			 * first fragment. Unfortunately there is only a final/
+			 * not-final flag.
+			 *
+			 * It's possible to add support for a bounded number of
+			 * interleaved advertisement reports.
+			 */
+			LOG_ERR("Interleaved adv");
 			continue;
 		}
 
 		if (data_status == BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE) {
-			/* Got HCI_LE_Extended_Advertising_Report: Incomplete, data truncated, no
-			 * more to come. This means the Controller is aborting the reassembly. We
-			 * discard the partially received report, and the application is not
-			 * notified.
+			/* The Controller is aborting the reassembly. We
+			 * discard the partially received report and do
+			 * not notify the application.
 			 *
-			 * See the Controller's documentation for possible reasons for aborting.
-			 * Hint: CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX.
+			 * See the Controller's documentation for possible
+			 * reasons for aborting. Hint:
+			 * CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX.
 			 */
-			LOG_DBG("Discarding incomplete advertisement.");
+			LOG_DBG("Incomplete adv");
 			reset_reassembling_advertiser();
 			continue;
 		}
@@ -331,7 +354,6 @@ static void bt_scan_process_one(bool cb_enabled)
 			 * this is the first report from the new advertiser.
 			 * Initialize the new advertiser.
 			 */
-			__ASSERT_NO_MSG(reassembling_advertiser.state == FRAG_ADV_INACTIVE);
 			init_reassembling_advertiser(&evt->addr, evt->sid);
 		}
 
@@ -341,7 +363,7 @@ static void bt_scan_process_one(bool cb_enabled)
 				net_buf_add_mem(reassembling_advertiser.buf, buf->data,
 						evt->length);
 			} else {
-				/* The report does not fit in the reassemby buffer
+				/* The report does not fit in the reassembly buffer
 				 * Discard this and future reports from the advertiser.
 				 */
 				LOG_WRN("Oversize advertisement");

@@ -210,7 +210,10 @@ Removing from the queue is only allowed in the critical section.
 
  This function takes care to not reorder advertising reports.
  */
-static void bt_scan_process_one(bool cb_enabled)
+
+typedef void bt_scan_result_cb_t(bt_addr_le_t *addr, struct bt_le_scan_recv_info *info, struct net_buf_simple *buf,
+	uint16_t len);
+static void bt_scan_process_one(bt_scan_result_cb_t *cb)
 {
 	struct net_buf *buf = NULL;
 	struct net_buf *cb_buf_ownership = NULL;
@@ -402,13 +405,13 @@ exit:
 	k_mutex_unlock(&bt_scan_reassembler_mutex);
 
 	/* Now we invoke application callbacks */
-	if (cb_evt && cb_enabled) {
+	if (cb_evt && cb) {
 		struct bt_le_scan_recv_info scan_info;
 		struct net_buf_simple scan_data;
 
 		create_ext_adv_info(cb_evt, &scan_info);
 		net_buf_simple_init_with_data(&scan_data, cb_evt->data, cb_evt->length);
-		le_adv_recv(&cb_evt->addr, &scan_info, &scan_data, scan_data.len);
+		cb(&cb_evt->addr, &scan_info, &scan_data, scan_data.len);
 	}
 
 	if (cb_buf_ownership) {
@@ -429,7 +432,7 @@ bool bt_scan_rx_work_pending(void)
 
 void bt_scan_rx_work(void)
 {
-	bt_scan_process_one(true);
+	bt_scan_process_one(le_adv_recv);
 
 	if (bt_scan_rx_work_pending()) {
 		bt_hci_core_trigger_rx_work();
@@ -438,5 +441,5 @@ void bt_scan_rx_work(void)
 
 void bt_scan_drop_buf(void)
 {
-	bt_scan_process_one(false);
+	bt_scan_process_one(NULL);
 }

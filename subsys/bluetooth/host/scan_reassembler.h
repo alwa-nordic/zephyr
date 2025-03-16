@@ -20,14 +20,35 @@
  *
  * Constructor @ref bt_scan_reassembler_init must be used.
  */
-struct bt_scan_reassembler_state {
+
+struct bt_scan_reassembler_sum {
+	/* If NULL, data should be discarded. */
+	struct net_buf *buf;
+	bt_addr_le_t addr;
+	uint8_t sid;
+};
+
+struct bt_scan_reassembler {
 	struct net_buf_pool *pool;
 	struct k_mutex mutex;
 	sys_slist_t hci_queue;
-	struct net_buf *buf;
+
+	/* This tracks the state of the head of `pool`.
+	 *
+	 * If zero, head's first byte is the subreport count as the first byte.
+	 */
 	uint8_t subreports;
-	uint8_t sid;
-	bt_addr_le_t addr;
+
+	/* Currently there is only one active assembly at a time, as we
+	 * expect the Controller to only start one assembly at a time,
+	 * not counting not fragmented reports.
+	 *
+	 * It may be needed to extend it this to be a set of a
+	 * statically known size, if the Controller tracks multiple
+	 * extended advertisers concurrently and also sends the reports
+	 * interleaved.
+	 */
+	struct bt_scan_reassembler_sum active_assembly;
 };
 
 /**
@@ -38,9 +59,9 @@ struct bt_scan_reassembler_state {
  *
  * Isr-ok.
  */
-static inline void bt_scan_reassembler_init(struct bt_scan_reassembler_state *state, struct net_buf_pool *pool)
+static inline void bt_scan_reassembler_init(struct bt_scan_reassembler *state, struct net_buf_pool *pool)
 {
-	*state = (struct bt_scan_reassembler_state){};
+	*state = (struct bt_scan_reassembler){};
 	state->pool = pool;
 	k_mutex_init(&state->mutex);
 }
@@ -82,7 +103,7 @@ static inline void bt_scan_reassembler_reset(struct bt_scan_reassembler_state *s
  *
  * isr-ok
  */
-void bt_scan_reassembler_hci_add_ext_report(struct bt_scan_reassembler_state *state, struct net_buf *buf);
+void bt_scan_reassembler_hci_add_ext_report(struct bt_scan_reassembler *state, struct net_buf *buf);
 // If there are any buffers in the queue, this will
 // immediately process the buffer at the head of the queue in a
 // non-blocking way and release the reference, skipping any

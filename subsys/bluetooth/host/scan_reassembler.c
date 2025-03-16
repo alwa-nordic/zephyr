@@ -37,16 +37,9 @@ static size_t bt_scan_head_remaining_report_count;
  */
 static sys_slist_t bt_scan_pending_adv_reports;
 
-struct fragmented_advertiser {
-	/* If NULL, data should be discarded. */
-	struct net_buf *buf;
-	bt_addr_le_t addr;
-	uint8_t sid;
-};
+static struct bt_scan_reassembler_sum reassembling_advertiser;
 
-static struct fragmented_advertiser reassembling_advertiser;
-
-static bool fragmented_advertisers_equal(const struct fragmented_advertiser *a,
+static bool fragmented_advertisers_equal(const struct bt_scan_reassembler_sum *a,
 					 const bt_addr_le_t *addr, uint8_t sid)
 {
 	/* Two advertisers are equal if they are the same adv set from the same device */
@@ -66,7 +59,7 @@ static void init_reassembling_advertiser(const bt_addr_le_t *addr, uint8_t sid)
 	reassembling_advertiser.buf = net_buf_alloc(&ext_scan_pool, K_NO_WAIT);
 }
 
-static void reset_reassembling_advertiser(struct fragmented_advertiser *reassembly)
+static void reset_reassembling_advertiser(struct bt_scan_reassembler_sum *reassembly)
 {
 	if (reassembly->buf) {
 		net_buf_unref(reassembly->buf);

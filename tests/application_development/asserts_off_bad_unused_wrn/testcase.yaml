@@ -1,0 +1,3 @@
+tests:
+  application_development.asserts_off_bad_unused_wrn:
+    build_only: true

@@ -112,8 +112,8 @@ def parse_irk(irk_str):
 
 def main():
     parser = argparse.ArgumentParser(description='Bluetooth IRK address resolution')
-    parser.add_argument('irk', help='Identity Resolving Key (IRK) in hex format')
-    parser.add_argument('rpa', help='Resolvable Private Address (RPA) in format xx:xx:xx:xx:xx:xx')
+    parser.add_argument('irk', help='Identity Resolving Key (IRK) in little-endian, either hex or comma separated byte literals.')
+    parser.add_argument('rpa', help='Resolvable Private Address (RPA) in cannonical format xx:xx:xx:xx:xx:xx')
     
     args = parser.parse_args()
     

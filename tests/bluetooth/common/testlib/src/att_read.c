@@ -282,6 +282,11 @@ int bt_testlib_gatt_discover_primary(uint16_t *result_handle, uint16_t *result_e
 		return api_err;
 	}
 	__ASSERT_NO_MSG(ctx->att_err >= 0);
+
+	if (ctx->att_err == BT_ATT_ERR_ATTRIBUTE_NOT_FOUND) {
+		LOG_INF("Attribute not found");
+	}
+
 	return ctx->att_err;
 }
 

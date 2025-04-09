@@ -15,9 +15,9 @@ target_include_directories(testlib PUBLIC
 
 target_sources(testlib PRIVATE
   src/adv.c
-  src/att.c
   src/att_read.c
   src/att_write.c
+  src/att.c
   src/conn_ref.c
   src/conn_wait.c
   src/connect.c

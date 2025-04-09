@@ -5,7 +5,7 @@
 #ifndef ZEPHYR_TESTS_BLUETOOTH_COMMON_TESTLIB_INCLUDE_TESTLIB_SCAN_H_
 #define ZEPHYR_TESTS_BLUETOOTH_COMMON_TESTLIB_INCLUDE_TESTLIB_SCAN_H_
 
-#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/addr.h>
 
 int bt_testlib_scan_find_name(bt_addr_le_t *result, const char *name);
 

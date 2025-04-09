@@ -2,13 +2,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <testlib/scan.h>
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log_core.h>
 #include <zephyr/logging/log.h>
-
-#include <testlib/scan.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(bt_testlib_scan, LOG_LEVEL_INF);
 
@@ -66,16 +74,28 @@ static void bt_scan_find_name_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t 
 int bt_testlib_scan_find_name(bt_addr_le_t *result, const char *name)
 {
 	int api_err;
-	struct bt_scan_find_name_closure ctx = {
-		.wanted_name = name,
-		.result = result,
-	};
+	struct bt_scan_find_name_closure ctx;
+
+	if (!result) {
+		LOG_ERR("Invalid result pointer");
+		return -EINVAL;
+	}
+
+	if (!name) {
+		LOG_ERR("Invalid name pointer");
+		return -EINVAL;
+	}
+
+	ctx.wanted_name = name;
+	ctx.result = result;
 
 	k_condvar_init(&ctx.done);
 
 	k_sem_take(&g_ctx_free, K_FOREVER);
 	k_mutex_lock(&g_ctx_lock, K_FOREVER);
 	g_ctx = &ctx;
+
+	LOG_INF("Scanning for advertisments with device name \"%s\"", name);
 
 	api_err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, bt_scan_find_name_cb);
 	if (!api_err) {

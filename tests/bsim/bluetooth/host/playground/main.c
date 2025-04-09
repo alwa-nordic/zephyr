@@ -68,30 +68,54 @@ void the_test(void)
 	__ASSERT(err == 0, "bt_addr_le_from_str failed with %d", err);
 	__ASSERT(addr.type == BT_ADDR_LE_RANDOM, "addr.type is %d", addr.type);
 	__ASSERT(BT_ADDR_IS_STATIC(&addr.a), "addr is not random static");
-
-	int created_identity = bt_id_create(&addr, irk);
-	__ASSERT(created_identity == BT_ID_DEFAULT, "created_identity is %d", created_identity);
-
+	
 	bt_enable_quiet();
 
-	/* start an advertiser */
+	int created_identity = bt_id_create(&addr, irk);
+	LOG_INF("created_identity: %d", created_identity);
+	__ASSERT(created_identity != BT_ID_DEFAULT, "created_identity is %d", created_identity);
+
+	/* Create an extended advertiser */
 	struct bt_le_adv_param adv_param = {
-		.options = BT_LE_ADV_OPT_NONE,
+		.id = created_identity,
+		.options = BT_LE_ADV_OPT_EXT_ADV,  /* Enable extended advertising */
 		.interval_min = BT_LE_ADV_INTERVAL_MIN,
 		.interval_max = BT_LE_ADV_INTERVAL_MAX,
 	};
 
+	struct bt_le_ext_adv *adv;
+	/* Create advertising set */
+	err = bt_le_ext_adv_create(&adv_param, NULL, &adv);
+	__ASSERT(err == 0, "bt_le_ext_adv_create failed with %d", err);
+
+	/* Configure advertising start parameters */
+	struct bt_le_ext_adv_start_param start_param = {
+		.timeout = 0,    /* No timeout */
+		.num_events = 0, /* No limit on events */
+	};
+
+	/* Update advertising parameters */
+	err = bt_le_ext_adv_update_param(adv, &adv_param);
+	__ASSERT(err == 0, "bt_le_ext_adv_update_param failed with %d", err);
+
+
 	for (int i = 0; i < 20; i++) {
-		err = bt_le_adv_start(&adv_param, NULL, 0, NULL, 0);
-		__ASSERT(err == 0, "bt_le_adv_start failed with %d", err);
+		/* Start extended advertising */
+		err = bt_le_ext_adv_start(adv, &start_param);
+		__ASSERT(err == 0, "bt_le_ext_adv_start failed with %d", err);
 
 		k_sleep(K_MSEC(100));
 
-		err = bt_le_adv_stop();
-		__ASSERT(err == 0, "bt_le_adv_stop failed with %d", err);
+		/* Stop extended advertising */
+		err = bt_le_ext_adv_stop(adv);
+		__ASSERT(err == 0, "bt_le_ext_adv_stop failed with %d", err);
 
 		k_sleep(K_MSEC(100));
 	}
+
+	/* Delete the advertising set when done */
+	err = bt_le_ext_adv_delete(adv);
+	__ASSERT(err == 0, "bt_le_ext_adv_delete failed with %d", err);
 
 	PASS("Done\n");
 }

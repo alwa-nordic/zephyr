@@ -2,9 +2,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/l2cap.h>
@@ -51,6 +54,7 @@ int bt_testlib_adv_conn(struct bt_conn **conn, int id, const char *name)
 	param.interval_min = BT_GAP_ADV_FAST_INT_MIN_1;
 	param.interval_max = BT_GAP_ADV_FAST_INT_MAX_1;
 	param.options |= BT_LE_ADV_OPT_CONN;
+	param.options |= BT_LE_ADV_OPT_USE_IDENTITY;
 
 	k_condvar_init(&ctx.done);
 
@@ -59,12 +63,13 @@ int bt_testlib_adv_conn(struct bt_conn **conn, int id, const char *name)
 	g_ctx = &ctx;
 
 	api_err = bt_le_ext_adv_create(&param, &cb, &adv);
+
 	if (!api_err && name != NULL) {
 		struct bt_data ad;
 
 		ad.type = BT_DATA_NAME_COMPLETE;
 		ad.data_len = strlen(name);
-		ad.data = (const uint8_t *)name;
+		ad.data = name;
 
 		api_err = bt_le_ext_adv_set_data(adv, &ad, 1, NULL, 0);
 	}
@@ -81,7 +86,7 @@ int bt_testlib_adv_conn(struct bt_conn **conn, int id, const char *name)
 	 * for the next taker of the semaphore.
 	 */
 	if (adv) {
-		bt_le_ext_adv_delete(adv);
+		api_err = bt_le_ext_adv_delete(adv);
 	}
 
 	g_ctx = NULL;

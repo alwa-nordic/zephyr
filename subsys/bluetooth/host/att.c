@@ -285,15 +285,30 @@ static void att_tx_destroy_work_handler(struct k_work *work)
 	}
 
 	if (!sys_slist_is_empty(&tx_destroy_queue)) {
-		k_work_submit_to_queue(bt_workq_chosen, &att_tx_destroy_work);
+		k_work_submit_to_queue(NULL, work);
 	}
 }
 
 static void att_tx_destroy(struct net_buf *buf)
 {
-	/* We need to invoke `att_on_sent_cb` which may block. Defer to bt_workq. */
+	/* We need to invoke `att_on_sent_cb`, which may block. We
+	 * don't want to block in a net buf destroy callback, so we
+	 * defer to a sensible workqueue.
+	 *
+	 * bt_workq cannot be used because it currently forms a
+	 * deadlock with att_pool: bt_workq -> btt_att_recv ->
+	 * send_err_rsp waits for att pool.
+	 *
+	 * We use the system workqueue since that's where the
+	 * tx_processor used to run, which invoked bt_hci_send(),
+	 * which could end up here.
+	 *
+	 * A possible alternative is tx_notify_workqueue_get() since
+	 * this workqueue is processing similar "completion" events.
+	 */
 	net_buf_slist_put(&tx_destroy_queue, buf);
-	k_work_submit_to_queue(bt_workq_chosen, &att_tx_destroy_work); /* att_tx_destroy_work_handler */
+	k_work_submit(&att_tx_destroy_work);
+	/* Submitted att_tx_destroy_work_handler() */
 }
 
 NET_BUF_POOL_DEFINE(att_pool, CONFIG_BT_ATT_TX_COUNT,

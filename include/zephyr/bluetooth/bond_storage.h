@@ -53,34 +53,21 @@ TK (Temporary Key) is not stored in bond storage.
 #include <stdint.h>
 #include <zephyr/sys/util_macro.h>
 
-enum bt_keys_type {
-	BT_KEYS_PERIPH_LTK = BIT(0),
-	BT_KEYS_IRK = BIT(1),
-	BT_KEYS_LTK = BIT(2),
-	BT_KEYS_LOCAL_CSRK = BIT(3),
-	BT_KEYS_REMOTE_CSRK = BIT(4),
-	BT_KEYS_LTK_P256 = BIT(5),
-};
-
-enum {
-	BT_KEYS_AUTHENTICATED = BIT(0),
-	BT_KEYS_DEBUG = BIT(1),
-	/* Bit 2 and 3 might accidentally exist in old stored keys */
-	BT_KEYS_SC = BIT(4),
-	BT_KEYS_OOB = BIT(5),
-};
-
-struct bt_ltk {
+/* unchanged from keys.h */
+struct bt_bond_ltk {
 	uint8_t rand[8];
 	uint8_t ediv[2];
 	uint8_t val[16];
 };
 
-struct bt_irk {
+/* changed from keys.h */
+struct bt_bond_irk {
 	uint8_t val[16];
+	/* rpa cache removed */
 };
 
-struct bt_csrk {
+/* unchanged from keys.h */
+struct bt_bond_csrk {
 	uint8_t val[16];
 	uint32_t cnt;
 };
@@ -90,58 +77,38 @@ struct bt_csrk {
  *
  * Contains all bonding information for a paired device, including encryption keys,
  * identity information, and signing keys.
- *
- * @note The @ref state field is runtime-only and not persisted to flash.
- * All other fields following @ref storage_start are stored in flash memory.
  */
 struct bt_bond {
 	uint8_t local_identity;
-
 	bt_addr_le_t peer_identity_address;
-	/**<
-	 */
+
+	/* replaces "flags" field from keys.h */
+	bool authenticated: 1;
+	bool debug_key: 1;
+	bool sc: 1;
+	bool oob: 1;
+
+	/* replaces "keys" field from keys.h */
+	bool central_ltk_present: 1;
+	bool peripheral_ltk_present: 1;
+	bool irk_present: 1;
+	bool local_csrk_present: 1;
+	bool remote_csrk_present: 1;
 
 	uint8_t encryption_key_size;
-	/**<
-	 * Encryption weakening feature used in some countries.
-	 */
 
-	/**
-	 * @brief Security level information.
-	 * Bitfield containing BT_KEYS_AUTHENTICATED, BT_KEYS_DEBUG, BT_KEYS_SC, and BT_KEYS_OOB
-	 * flags.
-	 */
-	uint8_t flags;
+	struct bt_bond_ltk central_ltk;
+	struct bt_bond_irk peripheral_irk;
 
-	/**
-	 * @brief Key type bitfield indicating which of the following key fields are valid.
-	 * Uses @ref bt_keys_type values.
-	 */
-	uint16_t keys;
+	struct bt_bond_csrk local_csrk;
+	struct bt_bond_csrk peer_csrk;
+};
 
-	/**
-	 * @brief Central Long Term Key.
-	 * For LE Secure Connections (LESC), this is also used as the peripheral LTK.
-	 */
-	struct bt_ltk ltk;
-
-	/** @brief Peer Identity Resolving Key */
-	struct bt_irk irk;
-
-	/**
-	 * @brief Local Connection Signature Resolving Key.
-	 * Legacy signing feature; modern implementations use link encryption and
-	 * Encrypted Advertising Data (EAD) instead.
-	struct bt_csrk local_csrk;  	// Signing stuff that nobody uses anymore. Instead we just
-	encrypt the link, and use EAD for advertisements.
-	 */
-	struct bt_csrk local_csrk;
-
-	/**
-	 * @brief Remote Connection Signature Resolving Key.
-	 * Legacy signing feature; modern implementations use link encryption instead.
-	 */
-	struct bt_csrk remote_csrk;
+/* New struct. Corresponds to a "Device Identity" in the spec. */
+struct bt_bond_peer_device_identity {
+	uint8_t local_identity_id;
+	bt_addr_le_t peer_identity_address;
+	struct bt_bond_irk peer_irk;
 };
 
 /*** Hereafter start function definitions ***/
@@ -165,23 +132,6 @@ struct bt_bond {
  * conflicts.
  */
 struct bond_storage_api {
-	/** @brief Request peripheral LTK from bond storage.
-	 */
-	int (*get_le_peripheral_ltk)(struct bt_conn *conn, const uint8_t ediv[2],
-				     const uint8_t rand[8], uint8_t out_ltk[16]);
-
-	/** @brief Get central LTK. */
-	int (*get_le_central_ltk)(struct bt_conn *conn, uint8_t out_ediv[2], uint8_t out_rand[8],
-				  uint8_t out_ltk[16]);
-
-	/** @brief Get BR/EDR link key. */
-	int (*get_bredr_link_key)(struct bt_conn *conn, uint8_t out_key[16]);
-
-	/** @brief Query authentication state for a connection. */
-	int (*get_authentication)(struct bt_conn *conn);
-
-	/** @brief Look up potential conflicts when adding a bond. */
-	int (*lookup_conflicts)(void);
 
 	/** @brief Store a bond persistently. */
 	int (*store_bond)(const struct bt_bond *bond);
@@ -189,6 +139,26 @@ struct bond_storage_api {
 	/** @brief Delete a bond matching the provided identities. */
 	int (*delete_bond)(bt_addr_le_t local_identity_address,
 			   bt_addr_le_t remote_identity_address);
+
+	/** @brief Request peripheral LTK from bond storage.
+	 */
+	int (*get_le_peripheral_ltk)(bt_addr_le_t local_identity_address,
+				     bt_addr_le_t remote_identity_address, const uint8_t ediv[2],
+				     const uint8_t rand[8], uint8_t out_ltk[16]);
+
+	/** @brief Get central LTK. */
+	int (*get_le_central_ltk)(bt_addr_le_t local_identity_address,
+				  bt_addr_le_t remote_identity_address, uint8_t out_ediv[2],
+				  uint8_t out_rand[8], uint8_t out_ltk[16]);
+
+	/** @brief Query authentication state for a connection. */
+	int (*get_authentication)(bt_addr_le_t local_identity_address,
+				  bt_addr_le_t remote_identity_address);
+	int (*local_csrk_read)(void);
+	int (*local_csrk_increment_counter)(void);
+
+	int (*remote_csrk_read)(void);
+	int (*remote_csrk_increment_counter)(void);
 
 	/** @brief Read all remote device identity entries and notify host.
 	 *
@@ -198,29 +168,9 @@ struct bond_storage_api {
 	 *
 	 * Normative: Please call back into Host with the Device
 	 * Identity entry for each bond that is stored.
-	 *
-	 * TODO: What is the callback? Does the Host need to know when
-	 * the "foreach" has completed? How?
 	 */
-	int (*read_all_remote_device_identities)(void);
-
-	/** @brief Read local CSRK. */
-	int (*local_csrk_read)(void);
-
-	/** @brief Increment local CSRK counter. */
-	int (*local_csrk_increment_counter)(void);
-
-	/** @brief Read remote CSRK. */
-	int (*remote_csrk_read)(void);
-
-	/** @brief Increment remote CSRK counter. */
-	int (*remote_csrk_increment_counter)(void);
+	int (*for_each_remote_device_identity)(
+		void (*callback)(bt_addr_le_t remote_identity_address));
 };
-
-/* Backend should provide this instance. Keeping it `const` encourages statically
- * defined tables in implementations.
- */
-extern const struct bond_storage_api bond_storage;
-/* End of function API table */
 
 #endif /* ZEPHYR_SUBSYS_BLUETOOTH_HOST_BOND_STORAGE_H_ */

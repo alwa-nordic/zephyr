@@ -3,6 +3,9 @@
 #include <zephyr/sys/util.h>
 
 struct foobar;
+#include <zephyr/spinlock.h>
+
+static struct k_spinlock global_lock;
 
 typedef void (*foobar_method_t)(struct foobar *self, void *context);
 
@@ -16,7 +19,10 @@ struct foobar_zipper {
 };
 
 /* Flag bit set on transient zipper nodes to distinguish them from callbacks. */
-#define FOOBAR_NODE_FLAG_ZIPPER 0x1U
+enum foobar_node_type {
+	FOOBAR_NODE_REAL = 0,
+	FOOBAR_NODE_ZIPPER = 1,
+};
 
 static sys_sflist_t foobar_list = SYS_SFLIST_STATIC_INIT(NULL);
 
@@ -44,7 +50,7 @@ static void foobar_mutex_unlock(void)
 
 static bool foobar_node_is_zipper(const sys_sfnode_t *node)
 {
-	return (sys_sfnode_flags_get(node) & FOOBAR_NODE_FLAG_ZIPPER) != 0U;
+	return (sys_sfnode_flags_get(node) == FOOBAR_NODE_ZIPPER);
 }
 
 static sys_sfnode_t *foobar_next_real_node(const sys_sfnode_t *node)
@@ -58,18 +64,10 @@ static sys_sfnode_t *foobar_next_real_node(const sys_sfnode_t *node)
 	return cursor;
 }
 
-static void foobar_zipper_prepare(struct foobar_zipper *zipper)
-{
-	sys_sfnode_init(&zipper->node, FOOBAR_NODE_FLAG_ZIPPER);
-}
-
 int foobar_add(struct foobar *item)
 {
-	if (item == NULL) {
-		return -EINVAL;
-	}
-
-	sys_sfnode_init(&item->node, 0U);
+	/* Mark as real node (not a zipper) */
+	sys_sfnode_init(&item->node, FOOBAR_NODE_REAL);
 
 	foobar_mutex_lock();
 	sys_sflist_append(&foobar_list, &item->node);
@@ -90,27 +88,63 @@ bool foobar_remove(struct foobar *item)
 	removed = sys_sflist_find_and_remove(&foobar_list, &item->node);
 	foobar_mutex_unlock();
 
-	if (removed) {
-		sys_sfnode_init(&item->node, 0U);
-	}
-
 	return removed;
 }
 
-void foobar_iterate(void *context)
+void zipper_start(sys_sflist_t *list, sys_sfnode_t *zipper)
 {
-	struct foobar_zipper zipper;
+	k_spinlock_key_t key;
+
+	sys_sfnode_init(zipper, FOOBAR_NODE_ZIPPER);
+
+	key = k_spin_lock(&global_lock);
+	sys_sflist_prepend(list, zipper);
+	k_spin_unlock(&global_lock, key);
+}
+
+sys_sfnode_t *zipper_next(sys_sflist_t *list, sys_sfnode_t *zipper)
+{
+	k_spinlock_key_t key;
+	sys_sfnode_t *next = zipper;
+
+	key = k_spin_lock(&global_lock);
+sys_sflist_remove
+	SYS_SFLIST_ITERATE_FROM_NODE(list, next) {
+		/* Find a real node */
+		if (sys_sfnode_flags_get(next) == FOOBAR_NODE_REAL){
+			break;
+		}
+	}
+
+
+
+	k_spin_unlock(&global_lock, key);
+
+	return next;
+}
+
+void foobar_iterate(sys_sfnode_t *zipper)
+{
+	/* This function is written to tail call at the point of the callback.
+	 */
+	sys_sfnode_t zipper;
+
 	sys_sfnode_t *next;
 
-	foobar_zipper_prepare(&zipper);
+	sys_sfnode_init(&zipper, FOOBAR_NODE_ZIPPER);
 
-	foobar_mutex_lock();
-	sys_sflist_prepend(&foobar_list, &zipper.node);
+	{
+		k_spinlock_key_t key = k_spin_lock(&global_lock);
+		sys_sflist_prepend(&foobar_list, &zipper);
+		k_spin_unlock(&global_lock, key);
+	}
 
-	for (;;) {
-		next = foobar_next_real_node(&zipper.node);
-		if (next == NULL) {
-			break;
+	sys_sfnode_t *cursor = &zipper;
+
+	key = k_spin_lock(&global_lock);
+	while ((cursor = sys_sflist_peek_next(cursor)) != NULL){
+		if (sys_sfnode_flags_get(cursor) == FOOBAR_NODE_ZIPPER){
+			continue;
 		}
 
 		struct foobar *entry = CONTAINER_OF(next, struct foobar, node);
@@ -123,11 +157,11 @@ void foobar_iterate(void *context)
 			continue;
 		}
 
-		foobar_mutex_unlock();
+		k_spin_unlock(&global_lock, key);
 		method(entry, context);
-		foobar_mutex_lock();
+		key = k_spin_lock(&global_lock);
 	}
 
 	(void)sys_sflist_find_and_remove(&foobar_list, &zipper.node);
-	foobar_mutex_unlock();
+	k_spin_unlock(&global_lock, key);
 }

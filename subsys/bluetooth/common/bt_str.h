@@ -2,6 +2,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/common/bt_str.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/uuid.h>
 
@@ -13,3 +17,4 @@
  */
 const char *bt_hex(const void *buf, size_t len);
 const char *bt_uuid_str(const struct bt_uuid *uuid);
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

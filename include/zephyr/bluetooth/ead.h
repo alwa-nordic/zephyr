@@ -2,6 +2,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+
+#define ZEPHYR_INCLUDE_BLUETOOTH_EAD_H_
+
+#include <bluetooth/host/ead.h>
+
+#endif /* CONFIG_BT_HOST_NORDIC */
+
 #include <stddef.h>
 #include <stdint.h>
 

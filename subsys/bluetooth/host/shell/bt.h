@@ -4,6 +4,10 @@
  *  This is not to be included by the application.
  */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/host/shell/bt.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 /*
  * Copyright (c) 2017 Intel Corporation
  *
@@ -48,3 +52,4 @@ extern struct bt_le_per_adv_sync *per_adv_syncs[CONFIG_BT_PER_ADV_SYNC_MAX];
 bool is_substring(const char *substr, const char *str);
 
 #endif /* __BT_H */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

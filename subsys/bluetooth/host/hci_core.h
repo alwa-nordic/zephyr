@@ -1,5 +1,9 @@
 /* hci_core.h - Bluetooth HCI core access */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/host/hci_core.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 /*
  * Copyright (c) 2021-2025 Nordic Semiconductor ASA
  * Copyright (c) 2015-2016 Intel Corporation
@@ -597,3 +601,4 @@ int bt_hci_le_read_max_data_len(uint16_t *tx_octets, uint16_t *tx_time);
 bool bt_drv_quirk_no_auto_dle(void);
 
 void bt_tx_irq_raise(void);
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

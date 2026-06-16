@@ -1,5 +1,13 @@
 /* hci.h - Bluetooth Host Control Interface definitions */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+
+#define ZEPHYR_INCLUDE_BLUETOOTH_HCI_H_
+
+#include <bluetooth/host/hci.h>
+
+#endif /* CONFIG_BT_HOST_NORDIC */
+
 /*
  * Copyright (c) 2015-2016 Intel Corporation
  *

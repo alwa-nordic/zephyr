@@ -2,6 +2,10 @@
  *  @brief Internal APIs for Bluetooth ISO handling.
  */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/host/iso_internal.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 /*
  * Copyright (c) 2020 Intel Corporation
  * Copyright (c) 2021-2024 Nordic Semiconductor ASA
@@ -136,3 +140,4 @@ enum bt_iso_timestamp {
 	BT_ISO_TS_ABSENT = 0,
 	BT_ISO_TS_PRESENT,
 };
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

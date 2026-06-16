@@ -1,6 +1,11 @@
 /* Copyright (c) 2024 Nordic Semiconductor ASA
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/common/bt_settings_commit.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 #ifndef BT_SETTINGS_COMMIT_H_
 #define BT_SETTINGS_COMMIT_H_
 
@@ -17,3 +22,4 @@ enum bt_settings_commit_priority {
 };
 
 #endif /* BT_SETTINGS_COMMIT_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

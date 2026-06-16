@@ -4,6 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/host/settings.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -69,3 +73,4 @@ int bt_settings_delete_link_key(const bt_addr_le_t *addr);
 
 int bt_settings_store_keys(uint8_t id, const bt_addr_le_t *addr, const void *value, size_t val_len);
 int bt_settings_delete_keys(uint8_t id, const bt_addr_le_t *addr);
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

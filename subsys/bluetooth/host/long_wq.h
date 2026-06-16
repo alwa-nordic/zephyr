@@ -1,5 +1,9 @@
 /* long_wq.h - Workqueue API intended for long-running operations. */
 
+#if defined(CONFIG_BT_HOST_NORDIC)
+#include "host/host/long_wq.h"
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
+
 /*
  * Copyright (c) 2022 Nordic Semiconductor ASA
  *
@@ -12,3 +16,4 @@
 int bt_long_wq_schedule(struct k_work_delayable *dwork, k_timeout_t timeout);
 int bt_long_wq_reschedule(struct k_work_delayable *dwork, k_timeout_t timeout);
 int bt_long_wq_submit(struct k_work *dwork);
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

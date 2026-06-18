@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_CRYPTO_H_
-
 #include <bluetooth/host/crypto.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2017-2020 Nordic Semiconductor ASA
@@ -134,3 +130,4 @@ int bt_ccm_encrypt(const uint8_t key[16], uint8_t nonce[13],
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_CRYPTO_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

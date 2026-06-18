@@ -7,12 +7,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_DRIVERS_BLUETOOTH_H_
-
 #include <bluetooth/drivers/bluetooth.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /**
  * @file
@@ -342,3 +338,4 @@ struct net_buf *bt_hci_cmd_status_create(uint16_t op, uint8_t status);
 #endif
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_BLUETOOTH_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

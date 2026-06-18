@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #define NRF_DPPIC NRF_DPPIC10
 #endif /* CONFIG_SOC_COMPATIBLE_NRF54LX */
 
@@ -148,7 +148,7 @@ static inline void hal_radio_ready_time_capture_ppi_config(void)
  */
 static inline void hal_trigger_crypt_ppi_config(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_PAYLOAD, HAL_TRIGGER_CRYPT_PPI);
 	nrf_ccm_subscribe_set(NRF_CCM, NRF_CCM_TASK_START, HAL_TRIGGER_CRYPT_PPI);
 
@@ -227,7 +227,7 @@ static inline void hal_trigger_aar_ppi_config(void)
 	nrf_radio_publish_set(NRF_RADIO, NRF_RADIO_EVENT_BCMATCH, HAL_TRIGGER_AAR_PPI);
 	nrf_aar_subscribe_set(NRF_AAR, NRF_AAR_TASK_START, HAL_TRIGGER_AAR_PPI);
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* Enable same DPPI in MCU  domain */
 	nrf_dppi_channels_enable(NRF_DPPIC00, BIT(HAL_TRIGGER_AAR_PPI));
 

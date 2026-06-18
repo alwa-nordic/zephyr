@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_ATT_H_
-
 #include <bluetooth/host/att.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2016 Intel Corporation
@@ -200,3 +196,4 @@ enum bt_att_chan_opt {
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_ATT_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

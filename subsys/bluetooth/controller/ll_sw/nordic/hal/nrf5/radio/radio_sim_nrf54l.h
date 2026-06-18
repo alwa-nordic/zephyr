@@ -380,7 +380,9 @@
 #define HAL_RADIO_RESET_VALUE_DATAWHITE     0x00890040UL
 
 /* HAL abstraction of CCM h/w */
+#if !defined(EULER_ENGA_XXAA)
 #define NRF_CCM                               NRF_CCM00
+#endif
 #define NRF_CCM_TASK_CRYPT                    NRF_CCM_TASK_START
 #define EVENTS_ENDCRYPT                       EVENTS_END
 #define INPTR                                 IN.PTR
@@ -393,7 +395,9 @@
 #define CCM_RATEOVERRIDE_RATEOVERRIDE_500Kbps CCM_RATEOVERRIDE_RATEOVERRIDE_500Kbit
 
 /* HAL abstraction of AAR h/w */
+#if !defined(EULER_ENGA_XXAA)
 #define NRF_AAR NRF_AAR00
+#endif
 
 static inline void hal_radio_reset(void)
 {

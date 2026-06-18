@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_EAD_H_
-
 #include <bluetooth/host/ead.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 #include <stddef.h>
 #include <stdint.h>
@@ -121,3 +117,4 @@ int bt_ead_decrypt(const uint8_t session_key[BT_EAD_KEY_SIZE], const uint8_t iv[
 #endif
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_EAD_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

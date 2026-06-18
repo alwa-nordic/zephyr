@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_HCI_RAW_H_
-
 #include <bluetooth/host/hci_raw.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2016 Intel Corporation
@@ -66,3 +62,4 @@ int bt_enable_raw(struct k_fifo *rx_queue);
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_HCI_RAW_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

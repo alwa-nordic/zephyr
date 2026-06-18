@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_CONN_H_
-
 #include <bluetooth/host/conn.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2015-2016 Intel Corporation
@@ -3347,3 +3343,4 @@ int bt_conn_br_exit_sniff_mode(struct bt_conn *conn);
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_CONN_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

@@ -8,6 +8,7 @@ add_subdirectory_ifdef(CONFIG_BT_SHELL shell)
 
 zephyr_library_sources_ifdef(CONFIG_BT_HCI_RAW          hci_raw.c hci_common.c)
 zephyr_library_sources_ifdef(CONFIG_BT_MONITOR          monitor.c)
+zephyr_library_sources_ifdef(CONFIG_BT_HCI_LOG_HEXDUMP  hci_log_hexdump.c)
 zephyr_library_sources_ifdef(CONFIG_BT_SETTINGS         settings.c)
 zephyr_library_sources_ifdef(CONFIG_BT_HOST_CCM         aes_ccm.c)
 zephyr_library_sources_ifdef(CONFIG_BT_LONG_WQ          long_wq.c)

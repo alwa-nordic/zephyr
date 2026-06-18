@@ -47,9 +47,12 @@
 #elif defined(CONFIG_BOARD_NRF5340BSIM_NRF5340_CPUNET)
 #include <hal/nrf_vreqctrl.h>
 #include "radio_sim_nrf5340.h"
-#elif defined(CONFIG_SOC_SERIES_BSIM_NRF54LX)
+#elif defined(CONFIG_SOC_SERIES_BSIM_NRF54LX)  || defined(CONFIG_BOARD_EULERBSIM)
 #include <hal/nrf_ppib.h>
 #include "radio_sim_nrf54l.h"
+#elif defined(CONFIG_SOC_SERIES_BSIM_NRF55FX)
+#include <hal/nrf_ppib.h>
+#include "radio_sim_nrf55.h"
 #else
 #error "Unsupported SoC."
 #endif

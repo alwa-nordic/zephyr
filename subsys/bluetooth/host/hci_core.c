@@ -58,6 +58,7 @@
 #include "ecc.h"
 #include "gatt_internal.h"
 #include "hci_core.h"
+#include "hci_log_hexdump.h"
 #include "id.h"
 #include "iso_internal.h"
 #include "keys.h"
@@ -4352,6 +4353,7 @@ int bt_send(struct net_buf *buf)
 
 	LOG_DBG("buf %p len %u type %u", buf, buf->len, type);
 
+	bt_hci_log_hexdump(buf, BT_BUF_OUT);
 	bt_monitor_send(bt_monitor_opcode(type, BT_MONITOR_TX), buf->data + 1, buf->len - 1);
 
 	return bt_hci_send(bt_dev.hci, buf);
@@ -4483,6 +4485,7 @@ static int bt_recv_unsafe(struct net_buf *buf)
 	/* Don't pull the type, snice we still need it in the rx queue */
 	uint8_t type = buf->data[0];
 
+	bt_hci_log_hexdump(buf, BT_BUF_IN);
 	bt_monitor_send(bt_monitor_opcode(type, BT_MONITOR_RX), buf->data + 1, buf->len - 1);
 
 	LOG_DBG("buf %p len %u", buf, buf->len);

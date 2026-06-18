@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_CS_H_
-
 #include <bluetooth/host/cs.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2024 Nordic Semiconductor ASA
@@ -956,3 +952,4 @@ int bt_le_cs_get_antenna_path(uint8_t n_ap,
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_CS_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

@@ -19,5 +19,10 @@ boards:
   vendor: zephyr
   socs:
   - name: nrf54lm20a
+- name: nrf55fm20bsim
+  full_name: nRF55FM20 simulated boards (BabbleSim)
+  vendor: zephyr
+  socs:
+  - name: nrf55fm20a
 # Note the 53 and 54 are referring to the real SOC yamls, but we only use their name and cpu-cluster
 # definitions. In practice these board uses the same native SOC (SOC_POSIX) as the nrf52_bsim

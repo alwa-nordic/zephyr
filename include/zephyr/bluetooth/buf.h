@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_BUF_H_
-
 #include <bluetooth/host/buf.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2016 Intel Corporation
@@ -290,3 +286,4 @@ static inline enum bt_buf_type __deprecated bt_buf_get_type(struct net_buf *buf)
 #endif
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_BUF_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

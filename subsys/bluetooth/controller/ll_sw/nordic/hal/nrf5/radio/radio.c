@@ -29,6 +29,16 @@
 
 #include "radio_internal.h"
 
+#if defined(CONFIG_SOC_COMPATIBLE_NRF55F)
+#define NRF_RADIO_HAS_ABSOLUTE_FREQ 1
+#else
+#define NRF_RADIO_HAS_ABSOLUTE_FREQ 0
+#endif
+
+#if defined(RADIO_SHORTS0_ResetValue) //TODO: Provisional HACK until the MDK comes with SHORTS0 named SHORTS again
+#define SHORTS SHORTS0
+#endif
+
 /* Converts the GPIO controller in a FEM property's GPIO specification
  * to its nRF register map pointer.
  *
@@ -214,7 +224,7 @@ void radio_reset(void)
 	hal_radio_sw_switch_ppi_group_setup();
 #endif
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #if defined(CONFIG_BT_CTLR_TIFS_HW)
 	NRF_RADIO->TIMING = (RADIO_TIMING_RU_Legacy << RADIO_TIMING_RU_Pos) &
 			    RADIO_TIMING_RU_Msk;
@@ -226,7 +236,9 @@ void radio_reset(void)
 #if defined(CONFIG_NRF_SYS_EVENT)
 	(void)nrf_sys_event_request_global_constlat();
 #else /* !CONFIG_NRF_SYS_EVENT */
+#if !defined(CONFIG_BOARD_EULERBSIM)
 	NRF_POWER->TASKS_CONSTLAT = 1U;
+#endif
 #endif /* !CONFIG_NRF_SYS_EVENT */
 #endif /* CONFIG_SOC_COMPATIBLE_NRF54LX */
 
@@ -294,7 +306,7 @@ void radio_phy_set(uint8_t phy, uint8_t flags)
 
 	NRF_RADIO->MODE = (mode << RADIO_MODE_MODE_Pos) & RADIO_MODE_MODE_Msk;
 
-#if !defined(CONFIG_SOC_SERIES_NRF51) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if !defined(CONFIG_SOC_SERIES_NRF51) && !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #if defined(CONFIG_BT_CTLR_RADIO_ENABLE_FAST)
 	NRF_RADIO->MODECNF0 = ((RADIO_MODECNF0_DTX_Center <<
 				RADIO_MODECNF0_DTX_Pos) &
@@ -315,7 +327,11 @@ void radio_tx_power_set(int8_t power)
 	uint32_t value;
 
 	value = hal_radio_tx_power_value(power);
+#if !defined(CONFIG_SOC_COMPATIBLE_NRF55F)
 	NRF_RADIO->TXPOWER = value;
+#else
+	NRF_RADIO->TXAMPLITUDESCALE = value;
+#endif
 
 #if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET)
 	hal_radio_tx_power_high_voltage_set(power);
@@ -347,12 +363,16 @@ int8_t radio_tx_power_floor(int8_t power)
 
 void radio_freq_chan_set(uint32_t chan)
 {
+#if (NRF_RADIO_HAS_ABSOLUTE_FREQ)
+	NRF_RADIO->FREQUENCY = chan + 2400;
+#else
 	NRF_RADIO->FREQUENCY = chan;
+#endif
 }
 
 void radio_whiten_iv_set(uint32_t iv)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #if defined(RADIO_DATAWHITEIV_DATAWHITEIV_Msk)
 	NRF_RADIO->DATAWHITEIV = HAL_RADIO_RESET_VALUE_DATAWHITE | iv;
 #else /* !RADIO_DATAWHITEIV_DATAWHITEIV_Msk */
@@ -399,7 +419,7 @@ void radio_pkt_configure(uint8_t bits_len, uint8_t max_len, uint8_t flags)
 
 #elif defined(CONFIG_SOC_COMPATIBLE_NRF52X) || \
 	defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || \
-	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)
 	extra = 0U;
 
 	phy = RADIO_PKT_CONF_PHY_GET(flags);
@@ -454,23 +474,57 @@ void radio_pkt_configure(uint8_t bits_len, uint8_t max_len, uint8_t flags)
 		((((uint32_t)bits_len) << RADIO_PCNF0_LFLEN_Pos) & RADIO_PCNF0_LFLEN_Msk) |
 		((((uint32_t)bits_s1) << RADIO_PCNF0_S1LEN_Pos) & RADIO_PCNF0_S1LEN_Msk) | extra;
 
-	NRF_RADIO->PCNF1 &= ~(RADIO_PCNF1_MAXLEN_Msk | RADIO_PCNF1_STATLEN_Msk |
-			      RADIO_PCNF1_BALEN_Msk | RADIO_PCNF1_ENDIAN_Msk);
+	NRF_RADIO->PCNF1 &= ~(RADIO_PCNF1_MAXLEN_Msk
+#if defined RADIO_PCNF1_STATLEN_Msk
+			     | RADIO_PCNF1_STATLEN_Msk
+#endif
+			     |RADIO_PCNF1_BALEN_Msk | RADIO_PCNF1_ENDIAN_Msk);
 	NRF_RADIO->PCNF1 |=
 		((((uint32_t)max_len) << RADIO_PCNF1_MAXLEN_Pos) & RADIO_PCNF1_MAXLEN_Msk) |
+#if defined RADIO_PCNF1_STATLEN_Msk
 		(((0UL) << RADIO_PCNF1_STATLEN_Pos) & RADIO_PCNF1_STATLEN_Msk) |
+#endif
 		(((3UL) << RADIO_PCNF1_BALEN_Pos) & RADIO_PCNF1_BALEN_Msk) |
 		(((RADIO_PCNF1_ENDIAN_Little) << RADIO_PCNF1_ENDIAN_Pos) & RADIO_PCNF1_ENDIAN_Msk);
 }
 
+#if defined(CONFIG_BOARD_EULERBSIM) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)
+struct radio_vmda_job_ptr {
+	void *ptr;
+	struct {
+		uint32_t length:24;
+		uint32_t attribute:8;
+	} __packed;
+} __packed;
+
+static struct radio_vmda_job_ptr vmda_job[2];
+#endif
+
 void radio_pkt_rx_set(void *rx_packet)
 {
+#if !(defined(CONFIG_BOARD_EULERBSIM) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	NRF_RADIO->PACKETPTR = (uint32_t)rx_packet;
+#else
+	vmda_job[0].ptr = rx_packet;
+	vmda_job[0].length = 256; //Just big enough
+	vmda_job[0].attribute = 12;
+	NRF_RADIO->VDMACONFIG.LISTPTR = (uint32_t)vmda_job;
+	//TODO
+#endif
 }
 
 void radio_pkt_tx_set(void *tx_packet)
 {
+#if !(defined(CONFIG_BOARD_EULERBSIM) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	NRF_RADIO->PACKETPTR = (uint32_t)tx_packet;
+#else
+	vmda_job[1].ptr = tx_packet;
+	vmda_job[1].length = 256; //Just big enough
+	vmda_job[1].attribute = 12;
+
+	NRF_RADIO->VDMACONFIG.LISTPTR = (uint32_t)&vmda_job[1];
+	//TODO
+#endif
 }
 
 uint32_t radio_tx_ready_delay_get(uint8_t phy, uint8_t flags)
@@ -496,7 +550,7 @@ uint32_t radio_rx_chain_delay_get(uint8_t phy, uint8_t flags)
 void radio_rx_enable(void)
 {
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
 	 *       because of calls to radio_disable() and
 	 *       radio_switch_complete_and_disable() inside a radio event call
@@ -518,7 +572,7 @@ void radio_rx_enable(void)
 void radio_tx_enable(void)
 {
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
 	 *       because of calls to radio_disable() and
 	 *       radio_switch_complete_and_disable() inside a radio event call
@@ -910,7 +964,7 @@ void sw_switch(uint8_t dir_curr, uint8_t dir_next, uint8_t phy_curr, uint8_t fla
 	 *       time-stamp.
 	 */
 	hal_radio_end_time_capture_ppi_config();
-#if !defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if !defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) && !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* The function is not called for nRF5340 single timer configuration because
 	 * HAL_SW_SWITCH_TIMER_CLEAR_PPI is equal to HAL_RADIO_END_TIME_CAPTURE_PPI,
 	 * so channel is already enabled.
@@ -1331,7 +1385,7 @@ void radio_tmr_rx_status_reset(void)
 
 void radio_tmr_tx_enable(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #else /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
 #if (HAL_RADIO_ENABLE_TX_ON_TICK_PPI == HAL_RADIO_ENABLE_RX_ON_TICK_PPI)
 	hal_radio_enable_on_tick_ppi_config_and_enable(1U);
@@ -1341,7 +1395,7 @@ void radio_tmr_tx_enable(void)
 
 void radio_tmr_rx_enable(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #else /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
 #if (HAL_RADIO_ENABLE_TX_ON_TICK_PPI == HAL_RADIO_ENABLE_RX_ON_TICK_PPI)
 	hal_radio_enable_on_tick_ppi_config_and_enable(0U);
@@ -1351,7 +1405,7 @@ void radio_tmr_rx_enable(void)
 
 void radio_tmr_tx_disable(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	nrf_radio_subscribe_clear(NRF_RADIO, NRF_RADIO_TASK_TXEN);
 #else /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
 #endif /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -1359,7 +1413,7 @@ void radio_tmr_tx_disable(void)
 
 void radio_tmr_rx_disable(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	nrf_radio_subscribe_clear(NRF_RADIO, NRF_RADIO_TASK_RXEN);
 #else /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
 #endif /* !CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET && !CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -1598,7 +1652,7 @@ uint32_t radio_tmr_start_tick(uint8_t trx, uint32_t ticks_start)
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
 	last_pdu_end_us_init(latency_us);
 #endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
 	 *       because of calls to radio_disable() and
 	 *       radio_switch_complete_and_disable() inside a radio event call
@@ -1628,7 +1682,7 @@ uint32_t radio_tmr_start_us(uint8_t trx, uint32_t start_us)
 	 */
 	start_us -= last_pdu_end_us;
 #endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
-#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
 	 *       because of calls to radio_disable() and
 	 *       radio_switch_complete_and_disable() inside a radio event call
@@ -1763,7 +1817,7 @@ void radio_tmr_stop(void)
 #endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 #endif /* !CONFIG_BT_CTLR_TIFS_HW */
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)) && !defined(CONFIG_BOARD_EULERBSIM)
 #if defined(CONFIG_NRF_SYS_EVENT)
 	(void)nrf_sys_event_release_global_constlat();
 #else /* !CONFIG_NRF_SYS_EVENT */
@@ -1847,9 +1901,9 @@ void radio_tmr_end_capture(void)
 	 *       hal_sw_switch_timer_clear_ppi_config() and sw_switch(). There is no need to
 	 *       configure the channel again in this function.
 	 */
-#if (!defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)) || \
+#if (!defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) && !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))) || \
 	((defined(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET) || \
-	  defined(CONFIG_SOC_COMPATIBLE_NRF54LX)) && \
+	  (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))) && \
 	 !defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER))
 	hal_radio_end_time_capture_ppi_config();
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_RADIO_END_TIME_CAPTURE_PPI));
@@ -2044,7 +2098,7 @@ void radio_gpio_pa_lna_disable(void)
 #endif /* HAL_RADIO_GPIO_HAVE_PA_PIN || HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_BROADCAST_ISO_ENC)
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 struct ccm_job_ptr {
 	void *ptr;
 	struct {
@@ -2073,9 +2127,9 @@ static struct {
 	struct ccm_job_ptr out[6];
 } ccm_job;
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 static uint8_t MALIGN(4) _ccm_scratch[(HAL_RADIO_PDU_LEN_MAX - 4) + 16];
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_SYNC_ISO)
 static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_type, void *pkt)
@@ -2086,7 +2140,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Enabled;
 
 	/* Select the CCM decryption mode for the SoC */
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)
 	/* NOTE: Use fast decryption as rx data is decrypt after payload is received, compared to
 	 *       decrypting in parallel with radio reception of address in nRF51/nRF52/nRF53.
 	 */
@@ -2121,7 +2175,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	switch (phy) {
 	default:
 	case PHY_1M:
-#if !defined(CONFIG_SOC_SERIES_NRF51) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if !defined(CONFIG_SOC_SERIES_NRF51) && !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 		mode |= (CCM_MODE_DATARATE_1Mbit << CCM_MODE_DATARATE_Pos) &
 			CCM_MODE_DATARATE_Msk;
 #endif /* !CONFIG_SOC_SERIES_NRF51 && !CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -2147,7 +2201,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 		break;
 
 	case PHY_2M:
-#if !defined(CONFIG_SOC_SERIES_NRF51) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if !defined(CONFIG_SOC_SERIES_NRF51) && !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 		mode |= (CCM_MODE_DATARATE_2Mbit << CCM_MODE_DATARATE_Pos) &
 			CCM_MODE_DATARATE_Msk;
 #endif /* !CONFIG_SOC_SERIES_NRF51 && !CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -2160,7 +2214,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
 #if defined(CONFIG_HAS_HW_NRF_RADIO_BLE_CODED)
 	case PHY_CODED:
-#if !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if !(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 		mode |= (CCM_MODE_DATARATE_125Kbps << CCM_MODE_DATARATE_Pos) &
 			CCM_MODE_DATARATE_Msk;
 #endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -2185,7 +2239,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	NRF_CCM->MODE = mode;
 
 #if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK) || \
-	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)
 #if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
 #define ADATAMASK HEADERMASK
 #endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
@@ -2210,7 +2264,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 
 #if !defined(CONFIG_SOC_SERIES_NRF51) && \
 	!defined(CONFIG_SOC_NRF52832) && \
-	!defined(CONFIG_SOC_COMPATIBLE_NRF54LX) && \
+	!(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)) && \
 	(!defined(CONFIG_BT_CTLR_DATA_LENGTH_MAX) || \
 	 (CONFIG_BT_CTLR_DATA_LENGTH_MAX < ((HAL_RADIO_PDU_LEN_MAX) - 4U)))
 	const uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
@@ -2220,7 +2274,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	NRF_CCM->MAXPACKETSIZE = CLAMP((max_len - PDU_MIC_SIZE), 0x001B, 0x00FB);
 #endif
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 	/* Configure the CCM key, nonce and pointers */
 	NRF_CCM->KEY.VALUE[3] = sys_get_be32(&cnf->key[0]);
 	NRF_CCM->KEY.VALUE[2] = sys_get_be32(&cnf->key[4]);
@@ -2294,7 +2348,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_END);
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 	NRF_CCM->CNFPTR = (uint32_t)cnf;
 	NRF_CCM->INPTR = (uint32_t)_pkt_scratch;
 	NRF_CCM->OUTPTR = (uint32_t)pkt;
@@ -2306,7 +2360,7 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
 
 	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_KSGEN);
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 	return _pkt_scratch;
 }
@@ -2331,7 +2385,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Enabled;
 
 	/* Select the CCM encryption mode for the SoC */
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if (defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 	mode = (CCM_MODE_MODE_Encryption << CCM_MODE_MODE_Pos) &
 	       CCM_MODE_MODE_Msk;
 
@@ -2374,7 +2428,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 	NRF_CCM->MODE = mode;
 
 #if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK) || \
-	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
 #if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
 #define ADATAMASK HEADERMASK
 #endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
@@ -2399,7 +2453,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 
 #if !defined(CONFIG_SOC_SERIES_NRF51) && \
 	!defined(CONFIG_SOC_NRF52832) && \
-	!defined(CONFIG_SOC_COMPATIBLE_NRF54LX) && \
+	!(defined(CONFIG_SOC_COMPATIBLE_NRF54LX) || defined(CONFIG_SOC_COMPATIBLE_NRF55F)) && \
 	(!defined(CONFIG_BT_CTLR_DATA_LENGTH_MAX) || \
 	 (CONFIG_BT_CTLR_DATA_LENGTH_MAX < ((HAL_RADIO_PDU_LEN_MAX) - 4U)))
 	const uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
@@ -2409,7 +2463,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 	NRF_CCM->MAXPACKETSIZE = CLAMP((max_len - PDU_MIC_SIZE), 0x001B, 0x00FB);
 #endif
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 	/* Configure the CCM key, nonce and pointers */
 	NRF_CCM->KEY.VALUE[3] = sys_get_be32(&cnf->key[0]);
 	NRF_CCM->KEY.VALUE[2] = sys_get_be32(&cnf->key[4]);
@@ -2480,7 +2534,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 
 	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_START);
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 	NRF_CCM->CNFPTR = (uint32_t)cnf;
 	NRF_CCM->INPTR = (uint32_t)pkt;
 	NRF_CCM->OUTPTR = (uint32_t)_pkt_scratch;
@@ -2492,7 +2546,7 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
 
 	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_KSGEN);
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 	return _pkt_scratch;
 }
@@ -2533,7 +2587,7 @@ void radio_ccm_disable(void)
 #endif /* CONFIG_BT_CTLR_LE_ENC || CONFIG_BT_CTLR_BROADCAST_ISO_ENC */
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 struct aar_job_ptr {
 	void *ptr;
 	struct {
@@ -2572,9 +2626,9 @@ static struct {
 	/* NOTE: Refer to the AAR section in the SoC product specification for details */
 } aar_job;
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 static uint8_t MALIGN(4) _aar_scratch[3];
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags)
 {
@@ -2594,13 +2648,20 @@ void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags)
 
 	phy = flags >> 2;
 
+	uint32_t packet_ptr;
+#if !(defined(CONFIG_BOARD_EULERBSIM) || defined(CONFIG_SOC_COMPATIBLE_NRF55F))
+	packet_ptr = NRF_RADIO->PACKETPTR;
+#else
+	packet_ptr = (uintptr_t)vmda_job[0].ptr;
+#endif
+
 	/* Check if extended PDU or non-1M and not legacy PDU */
 	if (IS_ENABLED(CONFIG_BT_CTLR_ADV_EXT) &&
 	    ((flags & BIT(1)) || (!(flags & BIT(0)) && (phy > PHY_1M)))) {
-		addrptr = NRF_RADIO->PACKETPTR + 1;
+		addrptr = packet_ptr + 1;
 		bcc = 80;
 	} else {
-		addrptr = NRF_RADIO->PACKETPTR - 1;
+		addrptr = packet_ptr - 1;
 		bcc = 64;
 	}
 
@@ -2612,7 +2673,7 @@ void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags)
 	NRF_AAR->ENABLE = (AAR_ENABLE_ENABLE_Enabled << AAR_ENABLE_ENABLE_Pos) &
 			  AAR_ENABLE_ENABLE_Msk;
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 	/* Input, Resolvable Address Hash offset in the legacy or extended advertising PDU.
 	 * Radio packet pointer offset by 3 compared to legacy AAR in nRF51/52/53 SoCs that took
 	 * Radio packet pointer value.
@@ -2656,12 +2717,12 @@ void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags)
 	NRF_AAR->OUT.PTR = (uint32_t)&aar_job.out[0];
 	NRF_AAR->MAXRESOLVED = AAR_JOB_OUT_MAX_RESOLVED;
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 	NRF_AAR->NIRK = nirk;
 	NRF_AAR->IRKPTR = (uint32_t)irk;
 	NRF_AAR->ADDRPTR = addrptr;
 	NRF_AAR->SCRATCHPTR = (uint32_t)&_aar_scratch[0];
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 	nrf_aar_event_clear(NRF_AAR, NRF_AAR_EVENT_END);
 	nrf_aar_event_clear(NRF_AAR, NRF_AAR_EVENT_RESOLVED);
@@ -2676,11 +2737,11 @@ void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags)
 
 uint32_t radio_ar_match_get(void)
 {
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 	return aar_job.status;
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 	return NRF_AAR->STATUS;
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 }
 
 void radio_ar_status_reset(void)
@@ -2743,7 +2804,7 @@ uint8_t radio_ar_resolve(const uint8_t *addr)
 	NRF_AAR->ENABLE = (AAR_ENABLE_ENABLE_Enabled << AAR_ENABLE_ENABLE_Pos) &
 			  AAR_ENABLE_ENABLE_Msk;
 
-#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(EASYVDMA_PRESENT)
 	/* Input, Resolvable Address Hash offset in the supplied address buffer */
 	aar_job.in[0].ptr = (void *)&addr[BDADDR_HASH_OFFSET];
 
@@ -2759,9 +2820,9 @@ uint8_t radio_ar_resolve(const uint8_t *addr)
 	NRF_AAR->OUT.PTR = (uint32_t)&aar_job.out[0];
 	NRF_AAR->MAXRESOLVED = AAR_JOB_OUT_MAX_RESOLVED;
 
-#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#else /* EASYVDMA_PRESENT */
 	NRF_AAR->ADDRPTR = (uint32_t)addr - 3;
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
+#endif /* EASYVDMA_PRESENT */
 
 	nrf_aar_event_clear(NRF_AAR, NRF_AAR_EVENT_END);
 	nrf_aar_event_clear(NRF_AAR, NRF_AAR_EVENT_RESOLVED);

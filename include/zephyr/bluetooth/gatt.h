@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_GATT_H_
-
 #include <bluetooth/host/gatt.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2015-2016 Intel Corporation
@@ -2386,3 +2382,4 @@ void bt_gatt_cancel(struct bt_conn *conn, void *params);
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_GATT_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

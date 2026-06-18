@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_ASSIGNED_NUMBERS_H_
-
 #include <bluetooth/host/assigned_numbers.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2015-2025 Intel Corporation
@@ -1808,3 +1804,4 @@ enum bt_audio_location {
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_ASSIGNED_NUMBERS_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

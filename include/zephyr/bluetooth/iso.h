@@ -4,12 +4,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_ISO_H_
-
 #include <bluetooth/host/iso.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2020 Intel Corporation
@@ -1334,3 +1330,4 @@ int bt_iso_big_sync(struct bt_le_per_adv_sync *sync, struct bt_iso_big_sync_para
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_ISO_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

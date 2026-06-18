@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_L2CAP_H_
-
 #include <bluetooth/host/l2cap.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2015-2016 Intel Corporation
@@ -1130,3 +1126,4 @@ int bt_l2cap_chan_recv_complete(struct bt_l2cap_chan *chan,
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_L2CAP_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

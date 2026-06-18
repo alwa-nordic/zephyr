@@ -1,12 +1,8 @@
 /* hci.h - Bluetooth Host Control Interface types */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_HCI_TYPES_H_
-
 #include <bluetooth/host/hci_types.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2015-2016 Intel Corporation
@@ -4567,3 +4563,4 @@ struct bt_hci_evt_le_conn_rate_change {
 #endif
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_HCI_TYPES_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

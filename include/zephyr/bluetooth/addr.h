@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_ADDR_H_
-
 #include <bluetooth/host/addr.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
@@ -343,3 +339,4 @@ int bt_addr_le_from_str(const char *str, const char *type, bt_addr_le_t *addr);
 #endif
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_ADDR_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

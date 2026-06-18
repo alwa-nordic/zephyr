@@ -5,12 +5,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_DF_H_
-
 #include <bluetooth/host/direction.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_DF_H_
 #define ZEPHYR_INCLUDE_BLUETOOTH_DF_H_
@@ -371,3 +367,4 @@ int bt_df_conn_cte_rsp_enable(struct bt_conn *conn);
 int bt_df_conn_cte_rsp_disable(struct bt_conn *conn);
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_DF_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

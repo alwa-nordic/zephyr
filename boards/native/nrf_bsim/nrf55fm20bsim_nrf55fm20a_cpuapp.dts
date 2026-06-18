@@ -1,0 +1,166 @@
+/*
+ * Copyright (c) 2025 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <mem.h>
+/*
+ * The nRF55 SoC and DK board definitions are provided by the sdk-bsp-starlight
+ * Zephyr module (soc_root/board_root/dts_root = zephyr). The SoC devicetree
+ * lives under dts/arm/nordic and the DK board-common fragment under
+ * boards/nordic/nrf55fm20dk, so the includes below differ from the upstream
+ * zephyr_bsim_future layout (where these files were kept inside the board dir).
+ */
+#include <nordic/nrf55fm20a_enga_cpuapp.dtsi>
+#include <../boards/nordic/nrf55fm20dk/nrf55fm20dk_common.dtsi>
+
+/ {
+	model = "Nordic NRF55FM20 BSIM NRF55FM20A Application MCU";
+	compatible = "bsim,nrf55fm20-bsim-nrf55fm20a-cpuapp", "bsim,nrf55";
+
+	chosen {
+		zephyr,console = &uart20;
+		zephyr,entropy = &rng;
+		zephyr,bt-c2h-uart = &uart20;
+		zephyr,flash-controller = &rram_controller;
+		zephyr,flash = &cpuapp_rram;
+		zephyr,bt-hci = &bt_hci_controller;
+	};
+
+	/delete-node/ cpus;
+	/delete-node/ leds;
+	/delete-node/ pwmleds;
+	/delete-node/ buttons;
+
+	/* We remove aliases to nodes we delete (by now this results in an empty aliases node,
+	   but later we may share something with the real SOC)
+	 */
+	aliases {
+		/delete-property/ led0;
+		/delete-property/ led1;
+		/delete-property/ led2;
+		/delete-property/ led3;
+		/delete-property/ pwm-led0;
+		/delete-property/ sw0;
+		/delete-property/ sw1;
+		/delete-property/ sw2;
+		/delete-property/ sw3;
+		/delete-property/ watchdog0;
+	};
+	
+	soc {
+		/delete-node/ memory@20000000;
+
+		peripheral@50000000 {
+			/delete-node/ vpr@4c000;
+			/delete-node/ spi@4d000;
+			/delete-node/ usbhs@5a000;
+			/delete-node/ i2c@c6000;
+			/delete-node/ spi@c6000;
+			/delete-node/ i2c@c7000;
+			/delete-node/ spi@c7000;
+			/delete-node/ i2c@c8000;
+			/delete-node/ spi@c8000;
+			/delete-node/ pdm@d0000;
+			/delete-node/ pdm@d1000;
+			/delete-node/ pwm@d2000;
+			/delete-node/ pwm@d3000;
+			/delete-node/ pwm@d4000;
+			/delete-node/ adc@d5000;
+			/delete-node/ qdec@e0000;
+			/delete-node/ qdec@e1000;
+			/delete-node/ tdm@e8000;
+			/delete-node/ i2c@ed000;
+			/delete-node/ spi@ed000;
+			/delete-node/ i2c@ee000;
+			/delete-node/ spi@ee000;
+			/delete-node/ i2c@f0000;
+			/delete-node/ spi@f0000;
+			/delete-node/ i2c@104000;
+			/delete-node/ spi@104000;
+			/delete-node/ comparator@106000;
+			/delete-node/ watchdog@108000;
+			/delete-node/ watchdog@109000;
+			/delete-node/ regulator@120000;
+		};
+	};
+
+	rng: rng {
+		status = "okay";
+		compatible = "nordic,nrf-cracen-ctrdrbg";
+	};
+
+	psa_rng: psa-rng {
+		status = "disabled";
+	};
+};
+
+&bt_hci_controller {
+	status = "okay";
+};
+
+&bt_hci_sdc {
+	status = "disabled";
+};
+
+&grtc {
+	owned-channels = <0 1 2 3 4 5 6 7 8 9 10 11>;
+	/* Channels 7-11 reserved for Zero Latency IRQs, 3-4 for FLPR */
+	child-owned-channels = <3 4 7 8 9 10 11>;
+	status = "okay";
+};
+
+&cpuapp_rram {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@0 {
+			label = "storage";
+			reg = <0x0 DT_SIZE_K(500)>;
+		};
+	};
+};
+
+&uart20 {
+	status = "okay";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&gpio2 {
+	status = "okay";
+};
+
+&gpiote20 {
+	status = "okay";
+};
+
+&gpiote30 {
+	status = "okay";
+};
+
+&radio {
+	status = "okay";
+	/* These features are not yet supported by the RADIO model */
+	/delete-property/ dfe-supported;
+	/delete-property/ cs-supported;
+};
+
+&temp {
+	status = "okay";
+};
+
+&clock {
+	status = "okay";
+};

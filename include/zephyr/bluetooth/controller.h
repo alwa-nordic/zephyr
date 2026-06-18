@@ -3,12 +3,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_CONTROLLER_H_
-
 #include <bluetooth/host/controller.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2018 Codecoup
@@ -47,3 +43,4 @@ void bt_ctlr_set_public_addr(const uint8_t *addr);
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_CONTROLLER_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

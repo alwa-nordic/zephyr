@@ -1,12 +1,8 @@
 /* hci_vs.h - Bluetooth Host Control Interface Vendor Specific definitions */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_HCI_VS_H_
-
 #include <bluetooth/host/hci_vs.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2017-2018 Nordic Semiconductor ASA
@@ -64,6 +60,7 @@ extern "C" {
 #define BT_HCI_VS_HW_VAR_NORDIC_NRF53X          0x0003
 #define BT_HCI_VS_HW_VAR_NORDIC_NRF54HX         0x0004
 #define BT_HCI_VS_HW_VAR_NORDIC_NRF54LX         0x0005
+#define BT_HCI_VS_HW_VAR_NORDIC_NRF55FX         0x0006
 
 #define BT_HCI_VS_HW_VAR_ESP32                  0x0001
 #define BT_HCI_VS_HW_VAR_ESP32S3                0x0002
@@ -483,3 +480,4 @@ struct net_buf *hci_vs_err_assert(const char *file, uint32_t line);
 #endif
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_HCI_VS_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */

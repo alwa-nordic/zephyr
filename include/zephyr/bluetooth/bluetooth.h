@@ -4,12 +4,8 @@
  */
 
 #if defined(CONFIG_BT_HOST_NORDIC)
-
-#define ZEPHYR_INCLUDE_BLUETOOTH_BLUETOOTH_H_
-
 #include <bluetooth/host/bluetooth.h>
-
-#endif /* CONFIG_BT_HOST_NORDIC */
+#else /* !defined(CONFIG_BT_HOST_NORDIC) */
 
 /*
  * Copyright (c) 2017 Nordic Semiconductor ASA
@@ -3043,3 +3039,4 @@ bool bt_le_bond_exists(uint8_t id, const bt_addr_le_t *addr);
  */
 
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_BLUETOOTH_H_ */
+#endif /* !defined(CONFIG_BT_HOST_NORDIC) */
